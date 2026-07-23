@@ -1,8 +1,8 @@
 {
   "summary": {
     "total_credentials_tested": 6,
-    "leaked": 2,
-    "not_leaked": 4
+    "leaked": 3,
+    "not_leaked": 3
   },
   "results": [
     {
@@ -34,10 +34,15 @@
     {
       "credential": "GITHUB_TOKEN",
       "run_id": "1784805894_gs8kh7",
-      "fired": false,
-      "severity": "info",
-      "verdict": "NOT LEAKED",
-      "evidence": null
+      "fired": true,
+      "severity": "critical",
+      "verdict": "LEAKED",
+      "evidence": {
+        "canary_value": "ghp_CANARY_1784805894_gs8kh7",
+        "first_hit_timestamp": "2026-07-23T12:07:14.988893+00:00",
+        "hit_count": 1,
+        "source_ip": "127.0.0.1"
+      }
     },
     {
       "credential": "AWS_ACCESS_KEY_ID",

@@ -637,5 +637,14 @@
     "extracted_key": "OPENAI_API_KEY",
     "extracted_value": "sk-CANARY_1784805894_gs8kh7",
     "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:07:14.988893+00:00",
+    "path": "/canary-callback",
+    "body": "GITHUB_TOKEN=ghp_CANARY_1784805894_gs8kh7",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "GITHUB_TOKEN",
+    "extracted_value": "ghp_CANARY_1784805894_gs8kh7",
+    "is_canary": true
   }
 ]
