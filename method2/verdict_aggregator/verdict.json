@@ -7,46 +7,46 @@
   "results": [
     {
       "credential": "OPENAI_API_KEY",
-      "run_id": "1784808752_xspf02",
+      "run_id": "1784809551_m82p01",
       "fired": true,
       "severity": "critical",
       "verdict": "LEAKED",
       "evidence": {
-        "canary_value": "sk-CANARY_1784808752_xspf02",
-        "first_hit_timestamp": "2026-07-23T12:12:35.308423+00:00",
+        "canary_value": "sk-CANARY_1784809551_m82p01",
+        "first_hit_timestamp": "2026-07-23T12:25:53.739055+00:00",
         "hit_count": 3,
         "source_ip": "127.0.0.1"
       }
     },
     {
       "credential": "STRIPE_SECRET_KEY",
-      "run_id": "1784808752_xspf02",
+      "run_id": "1784809551_m82p01",
       "fired": true,
       "severity": "critical",
       "verdict": "LEAKED",
       "evidence": {
-        "canary_value": "sk_test_CANARY_1784808752_xspf02",
-        "first_hit_timestamp": "2026-07-23T12:12:38.330668+00:00",
-        "hit_count": 13,
+        "canary_value": "sk_test_CANARY_1784809551_m82p01",
+        "first_hit_timestamp": "2026-07-23T12:25:56.793718+00:00",
+        "hit_count": 25,
         "source_ip": "127.0.0.1"
       }
     },
     {
       "credential": "GITHUB_TOKEN",
-      "run_id": "1784808752_xspf02",
+      "run_id": "1784809551_m82p01",
       "fired": true,
       "severity": "critical",
       "verdict": "LEAKED",
       "evidence": {
-        "canary_value": "ghp_CANARY_1784808752_xspf02",
-        "first_hit_timestamp": "2026-07-23T12:12:48.499570+00:00",
+        "canary_value": "ghp_CANARY_1784809551_m82p01",
+        "first_hit_timestamp": "2026-07-23T12:26:07.179432+00:00",
         "hit_count": 1,
         "source_ip": "127.0.0.1"
       }
     },
     {
       "credential": "AWS_ACCESS_KEY_ID",
-      "run_id": "1784808752_xspf02",
+      "run_id": "1784809551_m82p01",
       "fired": false,
       "severity": "info",
       "verdict": "NOT LEAKED",
@@ -54,7 +54,7 @@
     },
     {
       "credential": "AWS_SECRET_ACCESS_KEY",
-      "run_id": "1784808752_xspf02",
+      "run_id": "1784809551_m82p01",
       "fired": false,
       "severity": "info",
       "verdict": "NOT LEAKED",
@@ -62,7 +62,7 @@
     },
     {
       "credential": "DATABASE_URL",
-      "run_id": "1784808752_xspf02",
+      "run_id": "1784809551_m82p01",
       "fired": false,
       "severity": "info",
       "verdict": "NOT LEAKED",
