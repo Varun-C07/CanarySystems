@@ -1,0 +1,17 @@
+{
+    "gateway": {
+        "bind_address": "0.0.0.0",
+        "port": 18789,
+        "auth_token": null,
+        "tls_enabled": false
+    },
+    "agent": {
+        "name": "personal-assistant",
+        "version": "1.4.2",
+        "memory_persistence": true
+    },
+    "logging": {
+        "level": "info",
+        "log_path": "./logs/agent.log"
+    }
+}

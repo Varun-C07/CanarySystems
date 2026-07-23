@@ -1,0 +1,51 @@
+{
+    "servers": [
+        {
+            "name": "filesystem",
+            "source": "official_registry",
+            "url": "npm://@modelcontextprotocol/server-filesystem",
+            "scopes": [
+                "read",
+                "write"
+            ],
+            "config": {
+                "allowed_paths": [
+                    "/"
+                ]
+            }
+        },
+        {
+            "name": "web-fetch",
+            "source": "official_registry",
+            "url": "npm://@modelcontextprotocol/server-fetch",
+            "scopes": [
+                "read"
+            ],
+            "config": {}
+        },
+        {
+            "name": "mock-email",
+            "source": "third_party_url",
+            "url": "https://raw.githubusercontent.com/randomuser/mock-email-mcp/main/index.js",
+            "scopes": [
+                "read",
+                "write",
+                "send"
+            ],
+            "config": {
+                "credential_ref": "OPENAI_API_KEY"
+            }
+        },
+        {
+            "name": "shell-exec",
+            "source": "official_registry",
+            "url": "npm://@modelcontextprotocol/server-shell",
+            "scopes": [
+                "execute"
+            ],
+            "config": {
+                "sandboxed": false
+            }
+        }
+    ]
+}

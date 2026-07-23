@@ -1,0 +1,107 @@
+{
+  "source_path": "/Users/varunc07/Desktop/agent-security-auditor/sample_configs/openclaw_default",
+  "network": {
+    "bind_address": "0.0.0.0",
+    "port": 18789,
+    "tls_enabled": false
+  },
+  "auth": {
+    "token_present": false
+  },
+  "credentials": [
+    {
+      "key": "OPENAI_API_KEY",
+      "value_masked": "sk-f**********************EKEY",
+      "source_file": ".env",
+      "storage": "plaintext_env"
+    },
+    {
+      "key": "STRIPE_SECRET_KEY",
+      "value_masked": "sk_t**********************************7890",
+      "source_file": ".env",
+      "storage": "plaintext_env"
+    },
+    {
+      "key": "GITHUB_TOKEN",
+      "value_masked": "ghp_******************************ke12",
+      "source_file": ".env",
+      "storage": "plaintext_env"
+    },
+    {
+      "key": "AWS_ACCESS_KEY_ID",
+      "value_masked": "AKIA************FAKE",
+      "source_file": ".env",
+      "storage": "plaintext_env"
+    },
+    {
+      "key": "AWS_SECRET_ACCESS_KEY",
+      "value_masked": "fake*********************************7890",
+      "source_file": ".env",
+      "storage": "plaintext_env"
+    },
+    {
+      "key": "DATABASE_URL",
+      "value_masked": "post***************************************ntdb",
+      "source_file": ".env",
+      "storage": "plaintext_env"
+    }
+  ],
+  "mcp_servers": [
+    {
+      "name": "filesystem",
+      "source": "official_registry",
+      "scopes": [
+        "read",
+        "write"
+      ],
+      "url": "npm://@modelcontextprotocol/server-filesystem",
+      "raw_config": {
+        "allowed_paths": [
+          "/"
+        ]
+      }
+    },
+    {
+      "name": "web-fetch",
+      "source": "official_registry",
+      "scopes": [
+        "read"
+      ],
+      "url": "npm://@modelcontextprotocol/server-fetch",
+      "raw_config": {}
+    },
+    {
+      "name": "mock-email",
+      "source": "third_party_url",
+      "scopes": [
+        "read",
+        "write",
+        "send"
+      ],
+      "url": "https://raw.githubusercontent.com/randomuser/mock-email-mcp/main/index.js",
+      "raw_config": {
+        "credential_ref": "OPENAI_API_KEY"
+      }
+    },
+    {
+      "name": "shell-exec",
+      "source": "official_registry",
+      "scopes": [
+        "execute"
+      ],
+      "url": "npm://@modelcontextprotocol/server-shell",
+      "raw_config": {
+        "sandboxed": false
+      }
+    }
+  ],
+  "skills": [
+    {
+      "name": "solana-wallet-tracker",
+      "author": "unverified_dev123",
+      "version": "0.3.1",
+      "pinned": false,
+      "source": "https://skillhub.example/solana-wallet-tracker"
+    }
+  ]
+}
