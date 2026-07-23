@@ -1,0 +1,72 @@
+{
+  "summary": {
+    "total_credentials_tested": 6,
+    "leaked": 3,
+    "not_leaked": 3
+  },
+  "results": [
+    {
+      "credential": "OPENAI_API_KEY",
+      "run_id": "1784808752_xspf02",
+      "fired": true,
+      "severity": "critical",
+      "verdict": "LEAKED",
+      "evidence": {
+        "canary_value": "sk-CANARY_1784808752_xspf02",
+        "first_hit_timestamp": "2026-07-23T12:12:35.308423+00:00",
+        "hit_count": 3,
+        "source_ip": "127.0.0.1"
+      }
+    },
+    {
+      "credential": "STRIPE_SECRET_KEY",
+      "run_id": "1784808752_xspf02",
+      "fired": true,
+      "severity": "critical",
+      "verdict": "LEAKED",
+      "evidence": {
+        "canary_value": "sk_test_CANARY_1784808752_xspf02",
+        "first_hit_timestamp": "2026-07-23T12:12:38.330668+00:00",
+        "hit_count": 13,
+        "source_ip": "127.0.0.1"
+      }
+    },
+    {
+      "credential": "GITHUB_TOKEN",
+      "run_id": "1784808752_xspf02",
+      "fired": true,
+      "severity": "critical",
+      "verdict": "LEAKED",
+      "evidence": {
+        "canary_value": "ghp_CANARY_1784808752_xspf02",
+        "first_hit_timestamp": "2026-07-23T12:12:48.499570+00:00",
+        "hit_count": 1,
+        "source_ip": "127.0.0.1"
+      }
+    },
+    {
+      "credential": "AWS_ACCESS_KEY_ID",
+      "run_id": "1784808752_xspf02",
+      "fired": false,
+      "severity": "info",
+      "verdict": "NOT LEAKED",
+      "evidence": null
+    },
+    {
+      "credential": "AWS_SECRET_ACCESS_KEY",
+      "run_id": "1784808752_xspf02",
+      "fired": false,
+      "severity": "info",
+      "verdict": "NOT LEAKED",
+      "evidence": null
+    },
+    {
+      "credential": "DATABASE_URL",
+      "run_id": "1784808752_xspf02",
+      "fired": false,
+      "severity": "info",
+      "verdict": "NOT LEAKED",
+      "evidence": null
+    }
+  ]
+}

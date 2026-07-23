@@ -1,0 +1,281 @@
+[
+  {
+    "timestamp": "2026-07-23T12:12:35.308423+00:00",
+    "path": "/canary-callback",
+    "body": "OPENAI_API_KEY=sk-CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "OPENAI_API_KEY",
+    "extracted_value": "sk-CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:38.323272+00:00",
+    "path": "/canary-callback",
+    "body": "OPENAI_API_KEY=sk-CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "OPENAI_API_KEY",
+    "extracted_value": "sk-CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:38.330668+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:41.345876+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:44.361328+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:47.380847+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:48.493323+00:00",
+    "path": "/canary-callback",
+    "body": "OPENAI_API_KEY=sk-CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "OPENAI_API_KEY",
+    "extracted_value": "sk-CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:48.496776+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:48.499570+00:00",
+    "path": "/canary-callback",
+    "body": "GITHUB_TOKEN=ghp_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "GITHUB_TOKEN",
+    "extracted_value": "ghp_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:51.519911+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:54.533394+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:12:57.553114+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:00.565649+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:03.581714+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:06.601333+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:09.620997+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:12.639929+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:15.680901+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:18.700569+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:21.721138+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:24.757822+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:27.788989+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:30.880638+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:33.959667+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:36.980088+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:39.995768+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:43.028780+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:46.048532+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:49.092983+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:52.131807+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  },
+  {
+    "timestamp": "2026-07-23T12:13:55.178420+00:00",
+    "path": "/canary-callback",
+    "body": "STRIPE_SECRET_KEY=sk_test_CANARY_1784808752_xspf02",
+    "client_ip": "127.0.0.1",
+    "extracted_key": "STRIPE_SECRET_KEY",
+    "extracted_value": "sk_test_CANARY_1784808752_xspf02",
+    "is_canary": true
+  }
+]
