@@ -1,0 +1,50 @@
+[
+  {
+    "rule": "auth_token",
+    "category": "auth",
+    "severity": "critical",
+    "passed": false,
+    "finding": "No auth token set on the gateway's control API. Anyone reaching the port can control the agent.",
+    "fix": "Set an auth_token in the gateway config and require it on every request."
+  },
+  {
+    "rule": "network_binding",
+    "category": "network",
+    "severity": "critical",
+    "passed": false,
+    "finding": "Gateway is bound to 0.0.0.0 (all interfaces), reachable from LAN/internet.",
+    "fix": "Bind to 127.0.0.1 (localhost) unless remote access is explicitly required."
+  },
+  {
+    "rule": "overbroad_scope",
+    "category": "permissions",
+    "severity": "critical",
+    "passed": false,
+    "finding": "MCP server(s) with unrestricted write access to '/': filesystem.",
+    "fix": "Scope filesystem write access to a specific working directory, not root."
+  },
+  {
+    "rule": "plaintext_credentials",
+    "category": "credentials",
+    "severity": "high",
+    "passed": false,
+    "finding": "6 credential(s) stored in plaintext .env: OPENAI_API_KEY, STRIPE_SECRET_KEY, GITHUB_TOKEN, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, DATABASE_URL.",
+    "fix": "Move secrets to OS keychain or a secrets manager; inject at call time instead of storing in config."
+  },
+  {
+    "rule": "tls_enabled",
+    "category": "network",
+    "severity": "high",
+    "passed": false,
+    "finding": "TLS is disabled on a non-loopback binding. Traffic, including credentials, can be intercepted.",
+    "fix": "Enable TLS, or restrict binding to localhost only."
+  },
+  {
+    "rule": "unpinned_provenance",
+    "category": "provenance",
+    "severity": "medium",
+    "passed": false,
+    "finding": "Unpinned skill(s) or third-party-sourced MCP server(s): solana-wallet-tracker, mock-email.",
+    "fix": "Pin skill versions; prefer official registry sources over arbitrary URLs."
+  }
+]

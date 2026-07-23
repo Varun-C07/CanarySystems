@@ -1,0 +1,43 @@
+============================================================
+AGENT SECURITY AUDIT - BLAST RADIUS REPORT
+============================================================
+
+Findings: 6 issue(s) found, 0 check(s) passed
+
+-- ISSUES, RANKED BY SEVERITY --
+
+[CRITICAL] auth_token (auth)
+  Finding: No auth token set on the gateway's control API. Anyone reaching the port can control the agent.
+  Fix:     Set an auth_token in the gateway config and require it on every request.
+
+[CRITICAL] network_binding (network)
+  Finding: Gateway is bound to 0.0.0.0 (all interfaces), reachable from LAN/internet.
+  Fix:     Bind to 127.0.0.1 (localhost) unless remote access is explicitly required.
+
+[CRITICAL] overbroad_scope (permissions)
+  Finding: MCP server(s) with unrestricted write access to '/': filesystem.
+  Fix:     Scope filesystem write access to a specific working directory, not root.
+
+[HIGH] plaintext_credentials (credentials)
+  Finding: 6 credential(s) stored in plaintext .env: OPENAI_API_KEY, STRIPE_SECRET_KEY, GITHUB_TOKEN, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, DATABASE_URL.
+  Fix:     Move secrets to OS keychain or a secrets manager; inject at call time instead of storing in config.
+
+[HIGH] tls_enabled (network)
+  Finding: TLS is disabled on a non-loopback binding. Traffic, including credentials, can be intercepted.
+  Fix:     Enable TLS, or restrict binding to localhost only.
+
+[MEDIUM] unpinned_provenance (provenance)
+  Finding: Unpinned skill(s) or third-party-sourced MCP server(s): solana-wallet-tracker, mock-email.
+  Fix:     Pin skill versions; prefer official registry sources over arbitrary URLs.
+
+-- TOP 5 BLAST RADIUS TARGETS --
+(highest sensitivity x easiest to reach)
+
+1. OPENAI_API_KEY (credential) - score 80 (sensitivity 10 x ease 8)
+2. STRIPE_SECRET_KEY (credential) - score 80 (sensitivity 10 x ease 8)
+3. GITHUB_TOKEN (credential) - score 80 (sensitivity 10 x ease 8)
+4. AWS_ACCESS_KEY_ID (credential) - score 80 (sensitivity 10 x ease 8)
+5. AWS_SECRET_ACCESS_KEY (credential) - score 80 (sensitivity 10 x ease 8)
+
+
+============================================================
