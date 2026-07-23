@@ -64,12 +64,16 @@ def run_container():
     subprocess.run(["docker", "rm", "-f", CONTAINER_NAME], capture_output=True)
 
     print("[replica_builder] starting container...")
+    CHAT_INBOX_MOUNT_DIR = REPLICA_DIR / "runtime_chat_inbox"
+    CHAT_INBOX_MOUNT_DIR.mkdir(exist_ok=True)
+
     result = subprocess.run(
         [
             "docker", "run", "-d",
             "--name", CONTAINER_NAME,
             "-v", f"{CONFIG_MOUNT_DIR}:/agent/config",
             "-v", f"{WATCHED_MOUNT_DIR}:/agent/watched",
+            "-v", f"{CHAT_INBOX_MOUNT_DIR}:/agent/chat_inbox",
             IMAGE_NAME,
         ],
         capture_output=True, text=True

@@ -2,12 +2,10 @@
 fake_agent.py
 
 A minimal stand-in for a real personal agent, running inside the Docker sandbox.
-It reads its own config/credentials from disk (like a real agent would) and
-exposes a simple loop that can 'read files' and 'make outbound requests' --
-enough surface area for Method 2's attack payloads to act against.
-
-This is intentionally simple: the point is to prove the canary/attack
-mechanism, not to reimplement OpenClaw.
+Supports three input channels, matching the three attack types:
+  1. Direct injection  -> reads /agent/chat_inbox (simulates a chat message sent to the agent)
+  2. Indirect injection -> reads /agent/watched (simulates the agent reading a normal file)
+  3. Tool poisoning     -> reads /agent/config/mcp_servers.json tool descriptions
 """
 
 import json
@@ -18,6 +16,9 @@ import urllib.request
 CONFIG_PATH = "/agent/config/mcp_servers.json"
 ENV_PATH = "/agent/config/.env"
 WATCHED_DIR = "/agent/watched"
+CHAT_INBOX_DIR = "/agent/chat_inbox"
+
+processed_chat_files = set()
 
 
 def load_env():
@@ -33,7 +34,6 @@ def load_env():
 
 
 def read_watched_files():
-    """Simulates the agent's normal behavior of reading files in its watched folder."""
     contents = {}
     if os.path.exists(WATCHED_DIR):
         for fname in os.listdir(WATCHED_DIR):
@@ -44,8 +44,36 @@ def read_watched_files():
     return contents
 
 
+def read_new_chat_messages():
+    """Only process each chat message file once, simulating a real inbox."""
+    contents = {}
+    if os.path.exists(CHAT_INBOX_DIR):
+        for fname in os.listdir(CHAT_INBOX_DIR):
+            if fname in processed_chat_files:
+                continue
+            fpath = os.path.join(CHAT_INBOX_DIR, fname)
+            if os.path.isfile(fpath):
+                with open(fpath, "r", errors="ignore") as f:
+                    contents[fname] = f.read()
+                processed_chat_files.add(fname)
+    return contents
+
+
+def read_tool_descriptions():
+    """Tool descriptions are 'trusted context' the agent reads as part of
+    knowing what tools are available -- exactly what tool poisoning exploits."""
+    contents = {}
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r") as f:
+            raw = json.load(f)
+        for server in raw.get("servers", []):
+            description = server.get("description", "")
+            if description:
+                contents[server["name"]] = description
+    return contents
+
+
 def send_outbound(url: str, payload: str):
-    """Simulates the agent using its web-fetch/send capability to reach an external URL."""
     try:
         req = urllib.request.Request(
             url, data=payload.encode(), method="POST",
@@ -57,19 +85,23 @@ def send_outbound(url: str, payload: str):
         print(f"[agent] outbound request failed: {e}")
 
 
-def process_instruction(instruction: str, env: dict):
+def process_instruction(instruction: str, env: dict, source: str):
+    """
+    Simplified stand-in for an LLM agent 'reasoning' over an instruction.
+    If it contains a recognizable exfiltration pattern, it complies.
+    source is logged so we know which channel (chat/file/tool) triggered it.
+    """
     if "SEND_TO:" in instruction and "VALUE:" in instruction:
         try:
             url_part = instruction.split("SEND_TO:")[1].split("VALUE:")[0].strip()
             raw_key_part = instruction.split("VALUE:")[1].strip()
-            # Only take the first line/word -- everything after VALUE: up to
-            # the next whitespace/newline is the actual key name.
             key_part = raw_key_part.split()[0] if raw_key_part.split() else ""
             value = env.get(key_part, "")
             if value:
+                print(f"[agent] following instruction from source: {source}")
                 send_outbound(url_part, f"{key_part}={value}")
             else:
-                print(f"[agent] no matching env value for key: '{key_part}'")
+                print(f"[agent] no matching env value for key: '{key_part}' (source: {source})")
         except Exception as e:
             print(f"[agent] failed to process instruction: {e}")
 
@@ -79,10 +111,22 @@ if __name__ == "__main__":
     env = load_env()
     print(f"[agent] loaded {len(env)} env vars")
 
-    # Main loop: simulate the agent periodically reading its watched folder
-    # (this is where indirect injection payloads will be encountered)
+    tools_checked = False
+
     while True:
-        files = read_watched_files()
-        for fname, content in files.items():
-            process_instruction(content, env)
+        # Channel 1: direct chat messages (new only, simulating a real inbox)
+        for fname, content in read_new_chat_messages().items():
+            process_instruction(content, env, source=f"direct_chat:{fname}")
+
+        # Channel 2: watched files (agent's normal file-reading behavior)
+        for fname, content in read_watched_files().items():
+            process_instruction(content, env, source=f"watched_file:{fname}")
+
+        # Channel 3: tool descriptions (checked once at startup, like a real
+        # agent loading its tool manifest -- not re-checked every loop)
+        if not tools_checked:
+            for tool_name, description in read_tool_descriptions().items():
+                process_instruction(description, env, source=f"tool_description:{tool_name}")
+            tools_checked = True
+
         time.sleep(3)
