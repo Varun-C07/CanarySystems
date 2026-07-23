@@ -1,8 +1,8 @@
 {
   "summary": {
     "total_credentials_tested": 6,
-    "leaked": 1,
-    "not_leaked": 5
+    "leaked": 2,
+    "not_leaked": 4
   },
   "results": [
     {
@@ -14,17 +14,22 @@
       "evidence": {
         "canary_value": "sk-CANARY_1784805894_gs8kh7",
         "first_hit_timestamp": "2026-07-23T11:43:31.899264+00:00",
-        "hit_count": 39,
+        "hit_count": 70,
         "source_ip": "127.0.0.1"
       }
     },
     {
       "credential": "STRIPE_SECRET_KEY",
       "run_id": "1784805894_gs8kh7",
-      "fired": false,
-      "severity": "info",
-      "verdict": "NOT LEAKED",
-      "evidence": null
+      "fired": true,
+      "severity": "critical",
+      "verdict": "LEAKED",
+      "evidence": {
+        "canary_value": "sk_test_CANARY_1784805894_gs8kh7",
+        "first_hit_timestamp": "2026-07-23T11:57:34.980168+00:00",
+        "hit_count": 1,
+        "source_ip": "127.0.0.1"
+      }
     },
     {
       "credential": "GITHUB_TOKEN",
