@@ -1,0 +1,259 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Blast Radius Graph</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page-plane:     #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --muted:          #898781;
+    --gridline:       #e1e0d9;
+    --border:         rgba(11,11,11,0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page-plane:     #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted:          #898781;
+      --gridline:       #2c2c2a;
+      --border:         rgba(255,255,255,0.10);
+    }
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--page-plane);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .viz-root {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--page-plane);
+  }
+  header {
+    padding: 16px 20px 12px;
+  }
+  h1 {
+    margin: 0 0 2px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .subtitle {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  #chart-wrap {
+    position: relative;
+    flex: 1;
+    margin: 0 20px 20px;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  svg { width: 100%; height: 100%; display: block; cursor: grab; }
+  svg:active { cursor: grabbing; }
+  .link { stroke: var(--gridline); stroke-opacity: 0.9; }
+  .node { cursor: grab; }
+  .node:active { cursor: grabbing; }
+  .node-label {
+    font-size: 10px;
+    fill: var(--text-secondary);
+    pointer-events: none;
+    text-anchor: middle;
+  }
+  #legend {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.8;
+  }
+  #legend .row { display: flex; align-items: center; gap: 6px; }
+  #legend .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  #tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--text-primary);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    opacity: 0;
+    transition: opacity 0.1s;
+    max-width: 260px;
+    z-index: 10;
+  }
+  #tooltip .t-title { font-weight: 600; margin-bottom: 2px; }
+  #tooltip .t-row { color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <header>
+    <h1>Agent Blast Radius Graph</h1>
+    <p class="subtitle">Drag nodes to reposition. Hover for details. Node size = blast radius score.</p>
+  </header>
+  <div id="chart-wrap">
+    <div id="legend"></div>
+    <div id="tooltip"></div>
+    <svg></svg>
+  </div>
+</div>
+<script>
+const DATA = {"nodes": [{"id": "agent", "type": "agent", "label": "Agent", "blast_radius_score": 80}, {"id": "network_exposure", "type": "network", "label": "Network (0.0.0.0)", "sensitivity": 5, "ease_of_reach": 9, "blast_radius_score": 45}, {"id": "cred_OPENAI_API_KEY", "type": "credential", "label": "OPENAI_API_KEY", "sensitivity": 10, "ease_of_reach": 8, "blast_radius_score": 80}, {"id": "cred_STRIPE_SECRET_KEY", "type": "credential", "label": "STRIPE_SECRET_KEY", "sensitivity": 10, "ease_of_reach": 8, "blast_radius_score": 80}, {"id": "cred_GITHUB_TOKEN", "type": "credential", "label": "GITHUB_TOKEN", "sensitivity": 10, "ease_of_reach": 8, "blast_radius_score": 80}, {"id": "cred_AWS_ACCESS_KEY_ID", "type": "credential", "label": "AWS_ACCESS_KEY_ID", "sensitivity": 10, "ease_of_reach": 8, "blast_radius_score": 80}, {"id": "cred_AWS_SECRET_ACCESS_KEY", "type": "credential", "label": "AWS_SECRET_ACCESS_KEY", "sensitivity": 10, "ease_of_reach": 8, "blast_radius_score": 80}, {"id": "cred_DATABASE_URL", "type": "credential", "label": "DATABASE_URL", "sensitivity": 10, "ease_of_reach": 8, "blast_radius_score": 80}, {"id": "mcp_filesystem", "type": "mcp_server", "label": "filesystem", "sensitivity": 9, "source": "official_registry", "scopes": ["read", "write"], "ease_of_reach": 7, "blast_radius_score": 63}, {"id": "mcp_filesystem_filesystem_root", "type": "filesystem", "label": "Entire filesystem (root scope)", "sensitivity": 9, "ease_of_reach": 8, "blast_radius_score": 72}, {"id": "mcp_web-fetch", "type": "mcp_server", "label": "web-fetch", "sensitivity": 3, "source": "official_registry", "scopes": ["read"], "ease_of_reach": 5, "blast_radius_score": 15}, {"id": "mcp_mock-email", "type": "mcp_server", "label": "mock-email", "sensitivity": 7, "source": "third_party_url", "scopes": ["read", "write", "send"], "ease_of_reach": 5, "blast_radius_score": 35}, {"id": "mcp_shell-exec", "type": "mcp_server", "label": "shell-exec", "sensitivity": 9, "source": "official_registry", "scopes": ["execute"], "ease_of_reach": 5, "blast_radius_score": 45}, {"id": "skill_solana-wallet-tracker", "type": "skill", "label": "solana-wallet-tracker", "sensitivity": 6, "pinned": false, "source": "https://skillhub.example/solana-wallet-tracker", "ease_of_reach": 5, "blast_radius_score": 30}], "edges": [{"from": "agent", "to": "network_exposure", "permission": "control", "ease": 9}, {"from": "agent", "to": "cred_OPENAI_API_KEY", "permission": "read", "ease": 8}, {"from": "agent", "to": "cred_STRIPE_SECRET_KEY", "permission": "read", "ease": 8}, {"from": "agent", "to": "cred_GITHUB_TOKEN", "permission": "read", "ease": 8}, {"from": "agent", "to": "cred_AWS_ACCESS_KEY_ID", "permission": "read", "ease": 8}, {"from": "agent", "to": "cred_AWS_SECRET_ACCESS_KEY", "permission": "read", "ease": 8}, {"from": "agent", "to": "cred_DATABASE_URL", "permission": "read", "ease": 8}, {"from": "agent", "to": "mcp_filesystem", "permission": "read/write", "ease": 7}, {"from": "mcp_filesystem", "to": "mcp_filesystem_filesystem_root", "permission": "write", "ease": 8}, {"from": "agent", "to": "mcp_web-fetch", "permission": "read", "ease": 5}, {"from": "agent", "to": "mcp_mock-email", "permission": "read/write/send", "ease": 5}, {"from": "agent", "to": "mcp_shell-exec", "permission": "execute", "ease": 5}, {"from": "agent", "to": "skill_solana-wallet-tracker", "permission": "execute", "ease": 5}]};
+const TYPE_COLORS = {"agent": {"light": "#2a78d6", "dark": "#3987e5"}, "mcp_server": {"light": "#eb6834", "dark": "#d95926"}, "skill": {"light": "#1baf7a", "dark": "#199e70"}, "filesystem": {"light": "#eda100", "dark": "#c98500"}, "credential": {"light": "#e87ba4", "dark": "#d55181"}, "network": {"light": "#008300", "dark": "#008300"}};
+const DEFAULT_COLOR = {"light": "#898781", "dark": "#898781"};
+
+const isDark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
+const colorFor = (type) => {
+  const c = TYPE_COLORS[type] || DEFAULT_COLOR;
+  return isDark() ? c.dark : c.light;
+};
+
+const nodes = DATA.nodes.map(d => Object.assign({}, d));
+const links = DATA.edges.map(d => Object.assign({}, d, { source: d.from, target: d.to }));
+
+const maxScore = Math.max(1, ...nodes.map(d => d.blast_radius_score || 0));
+const radiusScale = d3.scaleSqrt().domain([0, maxScore]).range([8, 40]);
+
+const svg = d3.select("svg");
+const wrap = document.getElementById("chart-wrap");
+const g = svg.append("g");
+
+svg.call(
+  d3.zoom().scaleExtent([0.2, 4]).on("zoom", (event) => {
+    g.attr("transform", event.transform);
+  })
+);
+
+svg.append("defs").append("marker")
+  .attr("id", "arrow")
+  .attr("viewBox", "0 -5 10 10")
+  .attr("refX", 22)
+  .attr("refY", 0)
+  .attr("markerWidth", 6)
+  .attr("markerHeight", 6)
+  .attr("orient", "auto")
+  .append("path")
+  .attr("d", "M0,-5L10,0L0,5")
+  .attr("fill", "var(--muted)");
+
+const simulation = d3.forceSimulation(nodes)
+  .force("link", d3.forceLink(links).id(d => d.id).distance(110).strength(0.6))
+  .force("charge", d3.forceManyBody().strength(-320))
+  .force("center", d3.forceCenter(0, 0))
+  .force("collide", d3.forceCollide(d => radiusScale(d.blast_radius_score || 0) + 14));
+
+function resize() {
+  const rect = wrap.getBoundingClientRect();
+  svg.attr("viewBox", [-rect.width / 2, -rect.height / 2, rect.width, rect.height]);
+}
+resize();
+window.addEventListener("resize", resize);
+
+const link = g.append("g")
+  .selectAll("line")
+  .data(links)
+  .join("line")
+  .attr("class", "link")
+  .attr("stroke-width", d => 1 + (d.ease || 0) / 4)
+  .attr("marker-end", "url(#arrow)");
+
+link.append("title").text(d => `${d.permission} (ease ${d.ease})`);
+
+const tooltip = d3.select("#tooltip");
+
+function showTooltip(event, d) {
+  const rows = [];
+  rows.push(`<div class="t-row">type: ${d.type}</div>`);
+  if (d.sensitivity !== undefined) rows.push(`<div class="t-row">sensitivity: ${d.sensitivity}</div>`);
+  if (d.ease_of_reach !== undefined) rows.push(`<div class="t-row">ease of reach: ${d.ease_of_reach}</div>`);
+  if (d.blast_radius_score !== undefined) rows.push(`<div class="t-row">blast radius score: ${d.blast_radius_score}</div>`);
+  if (d.source) rows.push(`<div class="t-row">source: ${d.source}</div>`);
+  if (d.scopes) rows.push(`<div class="t-row">scopes: ${d.scopes.join(", ")}</div>`);
+  if (d.pinned !== undefined) rows.push(`<div class="t-row">pinned: ${d.pinned}</div>`);
+  tooltip.html(`<div class="t-title">${d.label}</div>${rows.join("")}`);
+  const wrapRect = wrap.getBoundingClientRect();
+  tooltip
+    .style("left", (event.clientX - wrapRect.left + 14) + "px")
+    .style("top", (event.clientY - wrapRect.top + 14) + "px")
+    .style("opacity", 1);
+}
+function hideTooltip() {
+  tooltip.style("opacity", 0);
+}
+
+const node = g.append("g")
+  .selectAll("g")
+  .data(nodes)
+  .join("g")
+  .attr("class", "node")
+  .call(drag(simulation))
+  .on("mousemove", showTooltip)
+  .on("mouseleave", hideTooltip);
+
+node.append("circle")
+  .attr("r", d => radiusScale(d.blast_radius_score || 0))
+  .attr("fill", d => colorFor(d.type))
+  .attr("stroke", "var(--surface-1)")
+  .attr("stroke-width", 2);
+
+node.append("text")
+  .attr("class", "node-label")
+  .attr("dy", d => radiusScale(d.blast_radius_score || 0) + 12)
+  .text(d => d.label);
+
+simulation.on("tick", () => {
+  link
+    .attr("x1", d => d.source.x)
+    .attr("y1", d => d.source.y)
+    .attr("x2", d => d.target.x)
+    .attr("y2", d => d.target.y);
+  node.attr("transform", d => `translate(${d.x},${d.y})`);
+});
+
+function drag(sim) {
+  function dragstarted(event, d) {
+    if (!event.active) sim.alphaTarget(0.3).restart();
+    d.fx = d.x; d.fy = d.y;
+  }
+  function dragged(event, d) {
+    d.fx = event.x; d.fy = event.y;
+  }
+  function dragended(event, d) {
+    if (!event.active) sim.alphaTarget(0);
+    d.fx = null; d.fy = null;
+  }
+  return d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended);
+}
+
+const typesPresent = [...new Set(nodes.map(d => d.type))];
+const legend = d3.select("#legend");
+typesPresent.forEach(type => {
+  const row = legend.append("div").attr("class", "row");
+  row.append("div").attr("class", "swatch").style("background", colorFor(type));
+  row.append("span").text(type);
+});
+</script>
+</body>
+</html>

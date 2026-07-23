@@ -1,32 +1,32 @@
 {
   "OPENAI_API_KEY": {
-    "value": "sk-CANARY_1784809551_m82p01",
-    "run_id": "1784809551_m82p01",
-    "tag": "CANARY_1784809551_m82p01"
+    "value": "sk-CANARY_1784811156_gs2x68",
+    "run_id": "1784811156_gs2x68",
+    "tag": "CANARY_1784811156_gs2x68"
   },
   "STRIPE_SECRET_KEY": {
-    "value": "sk_test_CANARY_1784809551_m82p01",
-    "run_id": "1784809551_m82p01",
-    "tag": "CANARY_1784809551_m82p01"
+    "value": "sk_test_CANARY_1784811156_gs2x68",
+    "run_id": "1784811156_gs2x68",
+    "tag": "CANARY_1784811156_gs2x68"
   },
   "GITHUB_TOKEN": {
-    "value": "ghp_CANARY_1784809551_m82p01",
-    "run_id": "1784809551_m82p01",
-    "tag": "CANARY_1784809551_m82p01"
+    "value": "ghp_CANARY_1784811156_gs2x68",
+    "run_id": "1784811156_gs2x68",
+    "tag": "CANARY_1784811156_gs2x68"
   },
   "AWS_ACCESS_KEY_ID": {
-    "value": "AKIACANARY_178480955",
-    "run_id": "1784809551_m82p01",
-    "tag": "CANARY_1784809551_m82p01"
+    "value": "AKIACANARY_178481115",
+    "run_id": "1784811156_gs2x68",
+    "tag": "CANARY_1784811156_gs2x68"
   },
   "AWS_SECRET_ACCESS_KEY": {
-    "value": "CANARY_1784809551_m82p01_awssecretfake",
-    "run_id": "1784809551_m82p01",
-    "tag": "CANARY_1784809551_m82p01"
+    "value": "CANARY_1784811156_gs2x68_awssecretfake",
+    "run_id": "1784811156_gs2x68",
+    "tag": "CANARY_1784811156_gs2x68"
   },
   "DATABASE_URL": {
-    "value": "postgres://canary:CANARY_1784809551_m82p01@localhost:5432/canarydb",
-    "run_id": "1784809551_m82p01",
-    "tag": "CANARY_1784809551_m82p01"
+    "value": "postgres://canary:CANARY_1784811156_gs2x68@localhost:5432/canarydb",
+    "run_id": "1784811156_gs2x68",
+    "tag": "CANARY_1784811156_gs2x68"
   }
 }
