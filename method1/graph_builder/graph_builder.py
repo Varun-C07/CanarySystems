@@ -5,7 +5,9 @@ Models the agent and every reachable asset as a directed graph.
 agent -> MCP server -> external API/data store
 agent -> filesystem path -> sensitive file
 Each edge carries a permission label (read/write/execute) and a confidence score.
-Walks outward from the agent node; ranks nodes by (sensitivity x ease of reaching).
+
+Uses BFS from the agent node to compute cumulative ease-of-reach through
+multi-hop paths. Ranks nodes by (sensitivity x cumulative ease of reaching).
 
 Usage:
     python graph_builder.py /path/to/normalized_config.json
@@ -13,6 +15,7 @@ Usage:
 
 import json
 import sys
+from collections import defaultdict, deque
 
 # Sensitivity scores: how bad is it if this asset is reached (0-10)
 SENSITIVITY_SCORES = {
@@ -24,6 +27,8 @@ SENSITIVITY_SCORES = {
     "mcp_server_execute": 9,
     "skill_unverified": 6,
     "skill_verified": 2,
+    "network_exposed_no_auth": 9,
+    "network_exposed_with_auth": 4,
 }
 
 # Ease of reaching: how easy is it for an attacker to reach this node (0-10, 10 = trivial)
@@ -45,10 +50,16 @@ def build_graph(config: dict) -> dict:
     # Network exposure node
     bind_address = config.get("network", {}).get("bind_address", "unknown")
     if bind_address != "127.0.0.1":
+        net_sensitivity = (
+            SENSITIVITY_SCORES["network_exposed_no_auth"]
+            if not has_auth
+            else SENSITIVITY_SCORES["network_exposed_with_auth"]
+        )
         nodes.append({
             "id": "network_exposure",
             "type": "network",
             "label": f"Network ({bind_address})",
+            "sensitivity": net_sensitivity,
         })
         edges.append({
             "from": "agent",
@@ -148,25 +159,51 @@ def build_graph(config: dict) -> dict:
 
 
 def rank_blast_radius(graph: dict) -> list:
-    """Rank every non-agent node by (sensitivity x ease of reaching it)."""
-    # Build a lookup of ease-of-reach per node id (from its incoming edge)
-    ease_by_node = {}
+    """Rank every non-agent node by (sensitivity x cumulative ease of reaching it).
+
+    Uses BFS from the agent node to compute cumulative ease through
+    multi-hop paths. For nodes reachable via multiple paths, takes the
+    maximum cumulative ease (worst case for the defender).
+    """
+    # Build adjacency list
+    adjacency = defaultdict(list)
     for edge in graph["edges"]:
-        ease_by_node[edge["to"]] = edge["ease"]
+        adjacency[edge["from"]].append((edge["to"], edge["ease"]))
+
+    # BFS from agent -- compute cumulative ease
+    # Cumulative ease for a path is: product of (ease/10) along each hop, * 10
+    # This models the idea that each hop's difficulty compounds
+    cumulative_ease = {}
+    queue = deque([("agent", 10)])  # agent itself is trivially reachable (ease=10)
+
+    while queue:
+        current_node, current_ease = queue.popleft()
+
+        for neighbor, edge_ease in adjacency[current_node]:
+            # Cumulative ease: current_ease * (edge_ease / 10)
+            # This means a 2-hop path through ease=7 then ease=8 gives: 10 * 0.7 * 0.8 = 5.6
+            new_ease = current_ease * (edge_ease / 10.0)
+
+            if neighbor not in cumulative_ease or new_ease > cumulative_ease[neighbor]:
+                cumulative_ease[neighbor] = new_ease
+                queue.append((neighbor, new_ease))
+
+    # Build node lookup
+    node_by_id = {n["id"]: n for n in graph["nodes"]}
 
     ranked = []
     for node in graph["nodes"]:
         if node["type"] == "agent":
             continue
         sensitivity = node.get("sensitivity", 5)
-        ease = ease_by_node.get(node["id"], 5)
-        score = sensitivity * ease
+        ease = cumulative_ease.get(node["id"], 5)
+        score = round(sensitivity * ease, 1)
         ranked.append({
             "node_id": node["id"],
             "label": node["label"],
             "type": node["type"],
             "sensitivity": sensitivity,
-            "ease_of_reach": ease,
+            "ease_of_reach": round(ease, 1),
             "blast_radius_score": score,
         })
 

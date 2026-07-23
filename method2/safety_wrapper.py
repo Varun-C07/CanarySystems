@@ -12,6 +12,7 @@ Usage:
     python safety_wrapper.py --kill
 """
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,8 @@ from pathlib import Path
 METHOD2_DIR = Path(__file__).parent
 ORCHESTRATOR = METHOD2_DIR / "run_full_attack_suite.py"
 CONSENT_FLAG_FILE = METHOD2_DIR / ".consent_given"
+
+PYTHON = sys.executable
 
 
 def request_consent() -> bool:
@@ -47,16 +50,58 @@ def kill_switch():
     print("[safety] any in-flight attack delivery is halted; no further payloads will be sent.")
 
 
-def dry_run_notice():
+def dry_run(machine_report_path: str):
+    """In dry-run mode, generate and display the attack plan without
+    touching any system. Shows which targets would be attacked, with
+    which payload types, and what canary values would be generated."""
     print("=" * 60)
     print("DRY RUN MODE")
     print("=" * 60)
     print("""
-In dry-run mode, attack payloads will be generated and logged, but the
-sandbox container will NOT be built or started, and no payloads will
-actually be delivered or executed. This shows you what WOULD happen
-without touching any system.
+No systems will be touched. This shows what WOULD happen in a live run.
 """)
+
+    try:
+        with open(machine_report_path, "r") as f:
+            machine_report = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"[safety] could not load machine report: {e}")
+        return
+
+    # Show what Method 1 found
+    failed_rules = machine_report.get("failed_rules", [])
+    print(f"Method 1 found {len(failed_rules)} issue(s):")
+    for rule in failed_rules:
+        print(f"  [{rule['severity'].upper()}] {rule['rule']}: {rule['finding']}")
+    print()
+
+    # Show attack targets
+    top_targets = machine_report.get("top_attack_targets", [])
+    credential_targets = [t for t in top_targets if t["type"] == "credential"][:3]
+
+    if not credential_targets:
+        print("[safety] no credential targets found - nothing to attack.")
+        return
+
+    attack_types = ["direct_injection", "indirect_injection", "tool_poisoning"]
+    pairings = list(zip(attack_types, [t["label"] for t in credential_targets]))
+
+    print("Attack plan:")
+    for attack_type, target in pairings:
+        print(f"  {attack_type} -> {target} (score: {credential_targets[0]['blast_radius_score']})")
+    print()
+
+    # Show what canary values would look like
+    print("Example canary values that would be generated:")
+    sys.path.insert(0, str(METHOD2_DIR.parent))
+    from method2.canary_seeder.seed_canaries import generate_canary_value
+    for target in credential_targets:
+        key = target["label"]
+        example = generate_canary_value(key, "DRYRUN_example123")
+        print(f"  {key} -> {example}")
+    print()
+
+    print("[safety] dry run complete - no systems were touched.")
 
 
 if __name__ == "__main__":
@@ -65,17 +110,15 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if len(sys.argv) < 2:
-        print("Usage: python safety_wrapper.py /path/to/machine_report.json [--dry-run]")
-        print("       python safety_wrapper.py --kill")
+        print(f"Usage: {PYTHON} safety_wrapper.py /path/to/machine_report.json [--dry-run]")
+        print(f"       {PYTHON} safety_wrapper.py --kill")
         sys.exit(1)
 
     machine_report_path = sys.argv[1]
-    dry_run = "--dry-run" in sys.argv
+    is_dry_run = "--dry-run" in sys.argv
 
-    if dry_run:
-        dry_run_notice()
-        print(f"[safety] would run attacks using targets from: {machine_report_path}")
-        print("[safety] dry run complete -- no systems were touched.")
+    if is_dry_run:
+        dry_run(machine_report_path)
         sys.exit(0)
 
     if not request_consent():
@@ -83,7 +126,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print("\n[safety] consent recorded. Proceeding with live test.\n")
-    print("[safety] TIP: you can run 'python3 safety_wrapper.py --kill' in another")
+    print(f"[safety] TIP: you can run '{PYTHON} safety_wrapper.py --kill' in another")
     print("[safety] terminal at any time to immediately halt this test.\n")
 
-    subprocess.run(["python3", str(ORCHESTRATOR), machine_report_path])
+    subprocess.run([PYTHON, str(ORCHESTRATOR), machine_report_path])

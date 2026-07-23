@@ -16,8 +16,11 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "attack_payloads"))
-from payloads import ALL_PAYLOAD_TYPES
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from method2.attack_payloads.payloads import ALL_PAYLOAD_TYPES
 
 REPLICA_DIR = Path(__file__).parent.parent / "replica_builder"
 CHAT_INBOX_DIR = REPLICA_DIR / "runtime_chat_inbox"

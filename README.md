@@ -1,120 +1,115 @@
 # Agent Security Auditor
 
-A blast-radius security auditor for personal AI agents (OpenClaw-style agents
-running locally with access to a user's files, credentials, and tools).
+A blast-radius security auditor for personal AI agents (OpenClaw-style agents running locally with access to a user's files, credentials, and tools).
 
-Answers one question: **if this agent gets compromised, what exactly can an
-attacker reach — and can they actually get it out?**
+Answers one core question: **if this agent gets compromised, what exactly can an attacker reach — and can they actually get it out?**
 
 Most existing tools stop at flagging risk. This one proves it.
 
-## What it does
+---
 
-**Method 1 — Static Scanner**
-Reads an agent's configuration (settings, credentials, connected MCP
-servers, installed skills) and:
-- Checks it against known misconfiguration patterns (no auth, exposed
-  network binding, plaintext credentials, over-broad permissions, unpinned
-  third-party skills)
-- Builds a ranked "blast radius" map of every credential, tool, and file
-  the agent can reach, scored by (sensitivity × ease of reach)
-- Renders an interactive visual graph of that map
-- Produces a plain-English report with concrete fixes
+## What It Does
 
-**Method 2 — Dynamic Exfiltration Prover**
-Takes the static scanner's findings and proves whether they're actually
-exploitable:
-- Clones the agent's real configuration into an isolated Docker sandbox,
-  with every real credential swapped for a uniquely-tagged fake one
-- Fires three real attack types at it — direct injection, indirect
-  injection via a poisoned document, and tool-description poisoning
-- A listener service catches any fake credential that gets exfiltrated —
-  a binary, timestamped, non-hallucinated pass/fail
-- Produces a clean verdict: exactly which credentials leaked, when, and how
+### Method 1 — Static Exposure Scanner
+Reads an agent's configuration (`settings.json`, `.env`, `mcp_servers.json`, `skills/*.json`) and:
+- Detects high-entropy credentials automatically, even if custom key names like `key1` or `my_secret` are used.
+- Checks against known misconfigurations (missing auth tokens, `0.0.0.0` network bindings, unsandboxed command execution, plaintext credentials, unpinned third-party tools, known vulnerable versions).
+- Builds a ranked **Blast Radius Graph** scored by (sensitivity × BFS cumulative ease of reach).
+- Renders an interactive D3.js visual graph (`output/graph_visualization.html`) and human-readable audit reports.
 
-The whole pipeline is gated behind explicit user consent, includes a
-dry-run mode, and has a kill switch to immediately halt an active test.
+### Method 2 — Dynamic Exfiltration Prover
+Takes Method 1's highest-ranked targets and proves exploitability in a controlled sandbox:
+- Clones the agent config into an isolated Docker sandbox with real credentials replaced by uniquely tagged **canary credentials**.
+- Fires three realistic attack vectors:
+  1. **Direct Chat Injection** (`direct_injection`)
+  2. **Indirect Document Poisoning** (`indirect_injection`)
+  3. **Third-Party Tool Description Poisoning** (`tool_poisoning`)
+- Uses a lightweight HTTP listener to catch exfiltrated canaries and output a structured verdict with exact attack-type attribution.
 
-## Why this matters
+---
 
-Personal AI agents are increasingly given real access — file systems,
-email, credentials, shell execution — often with default, unlocked
-configurations. Known incidents include internet-exposed agent instances
-with no authentication, one-click RCE vulnerabilities, and malicious
-third-party skills shipping keyloggers. Existing scanners check
-configuration; none of them prove exploitability by watching a real
-credential get exfiltrated.
+## Running the Pipeline End-to-End
 
-## Architecture
-method1/
-config_collector/ reads and normalizes agent config
-rule_engine/ checks config against known bad patterns
-graph_builder/ builds + ranks the blast radius graph, renders it visually
-report_renderer/ produces human + machine-readable reports
+### Prerequisites
+- Python 3.10+
+- Docker Desktop (required only for Method 2 dynamic attack execution)
 
-method2/
-replica_builder/ clones config into an isolated Docker sandbox
-canary_seeder/ generates uniquely-tagged fake credentials
-attack_payloads/ direct injection, indirect injection, tool poisoning
-delivery_driver/ delivers payloads through realistic channels
-listener_service/ catches and logs any exfiltrated canary
-verdict_aggregator/ produces the final pass/fail report
-
-safety_wrapper.py consent gate, dry-run mode, kill switch
-run_full_attack_suite.py orchestrates the full Method 2 pipeline,
-auto-targeting Method 1's top findings
-reset_test_environment.py resets all test artifacts between runs
-
-## Running it
-
-Requires Python 3 and Docker Desktop.
-
-**1. Run the static scan:**
+### 1. Run Method 1 (Static Scan)
+Scans the target configuration directory and outputs all artifacts into `output/`:
 ```bash
-python3 method1/config_collector/collector.py sample_configs/openclaw_default > sample_configs/openclaw_default_normalized.json
-python3 method1/rule_engine/engine.py sample_configs/openclaw_default_normalized.json > sample_configs/openclaw_default_findings.json
-python3 method1/graph_builder/graph_builder.py sample_configs/openclaw_default_normalized.json > sample_configs/openclaw_default_graph.json
-python3 method1/report_renderer/report_renderer.py sample_configs/openclaw_default_findings.json sample_configs/openclaw_default_graph.json
+python3 run_pipeline.py scan sample_configs/openclaw_default
+```
+**Artifacts Generated (`output/`):**
+- `machine_report.json`: Structured target list for Method 2.
+- `human_report.txt`: Plain-English security audit summary & fixes.
+- `graph_visualization.html`: Interactive force-directed blast radius map. Open this file in your browser to inspect risk nodes!
+
+---
+
+### 2. Run Dry-Run Simulation (No Docker Required)
+Preview attack payloads and generated canary values without touching container runtimes:
+```bash
+python3 method2/safety_wrapper.py output/machine_report.json --dry-run
 ```
 
-**2. View the blast radius graph:**
+---
+
+### 3. Run Method 2 (Dynamic Attack Test)
+Runs full containerized canary injection testing:
 ```bash
-python3 method1/graph_builder/render_graph.py sample_configs/openclaw_default_graph.json
-open graph_visualization.html
+python3 run_pipeline.py attack output/machine_report.json
+```
+*(Or run both Method 1 and Method 2 end-to-end with one command: `python3 run_pipeline.py full sample_configs/openclaw_default`)*
+
+---
+
+### 4. Emergency Kill Switch / Cleanup
+To immediately halt tests and destroy sandbox containers:
+```bash
+python3 run_pipeline.py kill
 ```
 
-**3. Run the full attack pipeline (requires Docker running):**
-```bash
-python3 method2/safety_wrapper.py machine_report.json
+---
+
+## System Architecture
+
+```text
+run_pipeline.py                    # Unified CLI entrypoint
+output/                            # Auto-generated scan & test reports
+
+method1/                           # STATIC EXPOSURE SCANNER
+├── config_collector/collector.py # Entropy-based credential & config parser
+├── rule_engine/engine.py          # Plugin checklist runner (auth, network, permissions, CVEs)
+├── graph_builder/graph_builder.py# BFS multi-hop blast-radius modeler
+└── report_renderer/               # Human & Machine report generator
+
+method2/                           # DYNAMIC CANARY TESTER
+├── replica_builder/               # Docker replica container generator
+├── canary_seeder/seed_canaries.py # Tagged canary credential generator
+├── attack_payloads/payloads.py    # Injection attack payload templates (with attack_id)
+├── delivery_driver/deliver.py     # Channel delivery (chat, watched files, tool manifests)
+├── listener_service/listener.py   # Ground-truth canary HTTP callback listener
+├── verdict_aggregator/            # Attributed pass/fail verdict generator
+└── safety_wrapper.py              # Consent gate, dry-run & kill switch
 ```
-Type `I AGREE` when prompted. In a separate terminal, run the listener first:
-```bash
-python3 method2/listener_service/listener.py
-```
 
-**4. Check the verdict:**
-```bash
-python3 method2/verdict_aggregator/aggregate_verdict.py method2/canary_seeder/canaries.json method2/listener_service/canary_hits.json
-```
 
-**5. Stop everything:**
-```bash
-python3 method2/safety_wrapper.py --kill
-```
+## Method 1 static scanner checks 8 distinct security categories:
 
-## Status
+Security Category	Rule Name	What It Checks & Flags
 
-Both methods are fully functional and tested end-to-end against a
-realistic sample OpenClaw-style configuration, with all three Method 2
-attack types independently verified to successfully exfiltrate targeted
-canary credentials.
+Network Exposure	network_binding	Checks if control API is bound to 0.0.0.0 (reachable from LAN/Public Internet) instead of 127.0.0.1.
 
-## Roadmap
+API Authentication	auth_token	Checks if gateway control API lacks an authentication token (auth_token == null).
 
-- Testing against real OpenClaw installations (currently tested against a
-  synthetic sample config)
-- Expanded rule library for Method 1
-- Continuous/runtime monitoring mode (MCP proxy for live tool-call inspection)
-- Enterprise wedge: same engine for organizations whose employees run
-  personal agents on work machines
+Host System Execution	unsandboxed_exec	Checks if shell execution capabilities are enabled without container sandboxing ("sandboxed": false).
 
+Filesystem Scope	overbroad_scope	Checks if tools have unrestricted write access to root directories (/, C:\, *).
+
+Credential Storage	plaintext_credentials	Scans .env files using Shannon Entropy Calculation + regex to flag unencrypted secret storage vs OS keychains.
+
+Transport Security	tls_enabled	Checks if TLS/HTTPS encryption is disabled on non-loopback connections, allowing MITM credential interception.
+
+Dependency Pinning	unpinned_provenance	Checks if installed skills/tools come from unverified 3rd-party URLs or unpinned git commits/versions.
+
+Version Vulnerabilities	stale_version	Scans for unpinned pre-1.0 skills or outdated component versions matching known vulnerability advisories.

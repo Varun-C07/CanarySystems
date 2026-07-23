@@ -1,0 +1,28 @@
+# Virtual Environment
+venv/
+.venv/
+
+# Python Bytecode & Cache
+*/__pycache__/
+*/*/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Execution Output Artifacts
+output/
+
+# Runtime & Sandbox Logs
+method2/listener_service/canary_hits.json
+method2/verdict_aggregator/verdict.json
+method2/canary_seeder/canaries.json
+method2/replica_builder/runtime_config/.env
+method2/replica_builder/runtime_config/mcp_servers.json
+method2/replica_builder/runtime_watched/*
+method2/replica_builder/runtime_chat_inbox/*
+!.gitkeep
+
+# System & OS Files
+.DS_Store
+Thumbs.db
+.consent_given

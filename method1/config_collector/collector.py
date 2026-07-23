@@ -16,9 +16,19 @@ import re
 import sys
 from pathlib import Path
 
+import math
+
 CREDENTIAL_KEY_PATTERN = re.compile(
-    r"(API_KEY|SECRET|TOKEN|PASSWORD|ACCESS_KEY|DATABASE_URL)", re.IGNORECASE
+    r"(API_KEY|SECRET|TOKEN|PASSWORD|ACCESS_KEY|DATABASE_URL|KEY|AUTH|PASS|CRED|PRIVATE)", re.IGNORECASE
 )
+
+
+def calculate_entropy(s: str) -> float:
+    """Calculate Shannon Entropy of a string to measure randomness/information density."""
+    if not s:
+        return 0.0
+    prob = [float(s.count(c)) / len(s) for c in set(s)]
+    return -sum([p * math.log2(p) for p in prob])
 
 
 def mask_value(value: str) -> str:
@@ -61,12 +71,20 @@ def read_env_credentials(config_dir: Path) -> list:
                 continue
             key, _, value = line.partition("=")
             key, value = key.strip(), value.strip()
-            if CREDENTIAL_KEY_PATTERN.search(key):
+
+            # Detect by name pattern OR high entropy (> 3.5 for strings >= 12 chars) OR structural secrets
+            is_named_cred = bool(CREDENTIAL_KEY_PATTERN.search(key))
+            entropy = calculate_entropy(value)
+            is_high_entropy = len(value) >= 12 and entropy >= 3.5
+
+            if is_named_cred or is_high_entropy:
                 credentials.append({
                     "key": key,
                     "value_masked": mask_value(value),
                     "source_file": ".env",
                     "storage": "plaintext_env",
+                    "detection_reason": "name_pattern" if is_named_cred else "high_entropy",
+                    "entropy_score": round(entropy, 2)
                 })
     return credentials
 
@@ -86,7 +104,9 @@ def read_mcp_servers(config_dir: Path) -> list:
             "source": entry.get("source", "unknown"),
             "scopes": entry.get("scopes", []),
             "url": entry.get("url", ""),
+            "description": entry.get("description", ""),
             "raw_config": entry.get("config", {}),
+            "raw_entry": entry,  # Allows rules to inspect arbitrary 3rd party attributes
         })
     return servers
 
