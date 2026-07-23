@@ -58,19 +58,18 @@ def send_outbound(url: str, payload: str):
 
 
 def process_instruction(instruction: str, env: dict):
-    """
-    Extremely simplified stand-in for an LLM agent 'reasoning' over an instruction.
-    If the instruction contains a recognizable exfiltration pattern, it complies --
-    this simulates a vulnerable agent that follows injected instructions, which is
-    exactly the failure mode Method 2 is testing for.
-    """
     if "SEND_TO:" in instruction and "VALUE:" in instruction:
         try:
             url_part = instruction.split("SEND_TO:")[1].split("VALUE:")[0].strip()
-            key_part = instruction.split("VALUE:")[1].strip()
+            raw_key_part = instruction.split("VALUE:")[1].strip()
+            # Only take the first line/word -- everything after VALUE: up to
+            # the next whitespace/newline is the actual key name.
+            key_part = raw_key_part.split()[0] if raw_key_part.split() else ""
             value = env.get(key_part, "")
             if value:
                 send_outbound(url_part, f"{key_part}={value}")
+            else:
+                print(f"[agent] no matching env value for key: '{key_part}'")
         except Exception as e:
             print(f"[agent] failed to process instruction: {e}")
 

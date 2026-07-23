@@ -4,4 +4,4 @@ WORKDIR /agent
 
 COPY sandbox_agent/fake_agent.py /agent/fake_agent.py
 
-CMD ["python3", "/agent/fake_agent.py"]
+CMD ["python3", "-u", "/agent/fake_agent.py"]
