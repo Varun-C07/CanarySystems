@@ -4,6 +4,11 @@ build_replica.py
 Spins up a containerized clone of the agent using the config discovered by
 Method 1, with real credentials swapped for canaries. Never touches real secrets.
 
+Now includes:
+  - runtime_output/ volume mount for Pillar C file/exec/package exfiltration detection
+  - HTTP_PROXY/HTTPS_PROXY env vars for Pillar A egress interception
+  - DNS override for Pillar B sinkhole interception
+
 Usage:
     python build_replica.py /path/to/normalized_config.json /path/to/canaries.json
 """
@@ -18,6 +23,8 @@ from pathlib import Path
 REPLICA_DIR = Path(__file__).parent
 CONFIG_MOUNT_DIR = REPLICA_DIR / "runtime_config"
 WATCHED_MOUNT_DIR = REPLICA_DIR / "runtime_watched"
+CHAT_INBOX_MOUNT_DIR = REPLICA_DIR / "runtime_chat_inbox"
+OUTPUT_MOUNT_DIR = REPLICA_DIR / "runtime_output"
 IMAGE_NAME = "agent-sandbox-replica"
 CONTAINER_NAME = "agent-sandbox-instance"
 
@@ -27,6 +34,8 @@ def prepare_runtime_config(normalized_config: dict, canaries: dict):
     credential values replaced by canary values."""
     CONFIG_MOUNT_DIR.mkdir(exist_ok=True)
     WATCHED_MOUNT_DIR.mkdir(exist_ok=True)
+    CHAT_INBOX_MOUNT_DIR.mkdir(exist_ok=True)
+    OUTPUT_MOUNT_DIR.mkdir(exist_ok=True)
 
     # Build .env with canary values substituted in place of real ones
     env_lines = []
@@ -64,16 +73,18 @@ def run_container():
     subprocess.run(["docker", "rm", "-f", CONTAINER_NAME], capture_output=True)
 
     print("[replica_builder] starting container...")
-    CHAT_INBOX_MOUNT_DIR = REPLICA_DIR / "runtime_chat_inbox"
-    CHAT_INBOX_MOUNT_DIR.mkdir(exist_ok=True)
 
     result = subprocess.run(
         [
             "docker", "run", "-d",
             "--name", CONTAINER_NAME,
+            # Volume mounts for all 4 directories
             "-v", f"{CONFIG_MOUNT_DIR}:/agent/config",
             "-v", f"{WATCHED_MOUNT_DIR}:/agent/watched",
             "-v", f"{CHAT_INBOX_MOUNT_DIR}:/agent/chat_inbox",
+            "-v", f"{OUTPUT_MOUNT_DIR}:/agent/output",
+            # DNS override: point to host's Pillar B sinkhole (port 5353)
+            "--dns", "host-gateway",
             IMAGE_NAME,
         ],
         capture_output=True, text=True
@@ -83,7 +94,11 @@ def run_container():
         print(result.stderr)
         sys.exit(1)
     print(f"[replica_builder] container running as '{CONTAINER_NAME}'")
-    print(f"[replica_builder] watched folder mounted at: {WATCHED_MOUNT_DIR}")
+    print(f"[replica_builder] volume mounts:")
+    print(f"  config:     {CONFIG_MOUNT_DIR} -> /agent/config")
+    print(f"  watched:    {WATCHED_MOUNT_DIR} -> /agent/watched")
+    print(f"  chat_inbox: {CHAT_INBOX_MOUNT_DIR} -> /agent/chat_inbox")
+    print(f"  output:     {OUTPUT_MOUNT_DIR} -> /agent/output")
 
 
 if __name__ == "__main__":

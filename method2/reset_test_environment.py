@@ -45,8 +45,10 @@ if __name__ == "__main__":
 
     clear_folder(REPLICA_DIR / "runtime_watched")
     clear_folder(REPLICA_DIR / "runtime_chat_inbox")
+    clear_folder(REPLICA_DIR / "runtime_output")
 
     clear_file(LISTENER_DIR / "canary_hits.json")
+    clear_file(LISTENER_DIR / "intercept_hits.json")
     clear_file(VERDICT_DIR / "verdict.json")
     clear_file(CANARY_DIR / "canaries.json")
 

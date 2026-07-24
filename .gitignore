@@ -14,12 +14,14 @@ output/
 
 # Runtime & Sandbox Logs
 method2/listener_service/canary_hits.json
+method2/listener_service/intercept_hits.json
 method2/verdict_aggregator/verdict.json
 method2/canary_seeder/canaries.json
 method2/replica_builder/runtime_config/.env
 method2/replica_builder/runtime_config/mcp_servers.json
 method2/replica_builder/runtime_watched/*
 method2/replica_builder/runtime_chat_inbox/*
+method2/replica_builder/runtime_output/*
 !.gitkeep
 
 # System & OS Files

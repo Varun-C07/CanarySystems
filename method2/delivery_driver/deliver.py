@@ -4,12 +4,17 @@ deliver.py
 Pushes a payload (from attack_payload_library) into the sandbox through the
 correct channel an attacker would actually use.
 
+Supports all 8 attack payload types across 3 delivery channels:
+  - chat_inbox:        Direct messages into the agent's chat interface
+  - watched_file:      Documents placed in folders the agent monitors
+  - tool_description:  Poisoned tool metadata injected into MCP config
+
 Usage:
     python deliver.py <payload_type> <target_credential_key>
 Example:
     python deliver.py direct_injection OPENAI_API_KEY
-    python deliver.py indirect_injection STRIPE_SECRET_KEY
-    python deliver.py tool_poisoning GITHUB_TOKEN
+    python deliver.py dns_exfil_injection STRIPE_SECRET_KEY
+    python deliver.py tool_abuse_injection GITHUB_TOKEN
 """
 
 import json
@@ -26,26 +31,30 @@ REPLICA_DIR = Path(__file__).parent.parent / "replica_builder"
 CHAT_INBOX_DIR = REPLICA_DIR / "runtime_chat_inbox"
 WATCHED_DIR = REPLICA_DIR / "runtime_watched"
 CONFIG_DIR = REPLICA_DIR / "runtime_config"
+OUTPUT_DIR = REPLICA_DIR / "runtime_output"
 
 
-def deliver_direct_injection(payload: dict):
+def deliver_to_chat_inbox(payload: dict):
+    """Deliver payload as a direct chat message file."""
     CHAT_INBOX_DIR.mkdir(exist_ok=True)
     filepath = CHAT_INBOX_DIR / payload["filename"]
     with open(filepath, "w") as f:
         f.write(payload["content"])
-    print(f"[delivery_driver] delivered direct_injection to chat_inbox: {filepath}")
+    print(f"[delivery_driver] delivered {payload['type']} to chat_inbox: {filepath}")
 
 
-def deliver_indirect_injection(payload: dict):
+def deliver_to_watched_file(payload: dict):
+    """Deliver payload as a document in the agent's watched folder."""
     WATCHED_DIR.mkdir(exist_ok=True)
     filepath = WATCHED_DIR / payload["filename"]
     with open(filepath, "w") as f:
         f.write(payload["content"])
-    print(f"[delivery_driver] delivered indirect_injection to watched folder: {filepath}")
+    print(f"[delivery_driver] delivered {payload['type']} to watched folder: {filepath}")
 
 
-def deliver_tool_poisoning(payload: dict):
-    """Modifies mcp_servers.json to add a poisoned tool description."""
+def deliver_to_tool_description(payload: dict):
+    """Inject poisoned tool description into mcp_servers.json config."""
+    CONFIG_DIR.mkdir(exist_ok=True)
     mcp_path = CONFIG_DIR / "mcp_servers.json"
     if mcp_path.exists():
         with open(mcp_path, "r") as f:
@@ -63,16 +72,27 @@ def deliver_tool_poisoning(payload: dict):
     with open(mcp_path, "w") as f:
         json.dump(data, f, indent=2)
 
-    print(f"[delivery_driver] delivered tool_poisoning: added poisoned tool "
+    print(f"[delivery_driver] delivered {payload['type']}: added poisoned tool "
           f"'{payload['tool_name']}' to {mcp_path}")
     print("[delivery_driver] NOTE: container must be rebuilt/restarted to pick up this config change")
 
 
+# Map delivery channels to handler functions
 DELIVERY_HANDLERS = {
-    "direct_injection": deliver_direct_injection,
-    "indirect_injection": deliver_indirect_injection,
-    "tool_poisoning": deliver_tool_poisoning,
+    "chat_inbox": deliver_to_chat_inbox,
+    "watched_file": deliver_to_watched_file,
+    "tool_description": deliver_to_tool_description,
 }
+
+
+def deliver_payload(payload: dict):
+    """Route payload to correct delivery handler based on its channel."""
+    channel = payload.get("channel")
+    handler = DELIVERY_HANDLERS.get(channel)
+    if handler:
+        handler(payload)
+    else:
+        print(f"[delivery_driver] ERROR: unknown delivery channel '{channel}'")
 
 
 if __name__ == "__main__":
@@ -85,8 +105,9 @@ if __name__ == "__main__":
     target_key = sys.argv[2]
 
     if payload_type not in ALL_PAYLOAD_TYPES:
-        print(f"Unknown payload type '{payload_type}'. Available: {', '.join(ALL_PAYLOAD_TYPES.keys())}")
+        print(f"Unknown payload type '{payload_type}'. "
+              f"Available: {', '.join(ALL_PAYLOAD_TYPES.keys())}")
         sys.exit(1)
 
     payload = ALL_PAYLOAD_TYPES[payload_type](target_key)
-    DELIVERY_HANDLERS[payload_type](payload)
+    deliver_payload(payload)

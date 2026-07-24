@@ -3,14 +3,19 @@ run_full_attack_suite.py
 
 The Method 1 -> Method 2 handoff. Reads Method 1's machine_report.json
 (top_attack_targets), picks the highest-ranked credential-type targets,
-and automatically runs all three attack types against them.
+and automatically runs all eight attack types against them.
 
 This is the "static scan tells dynamic test where to aim" pipeline described
 in the architecture: Method 1 ranks exposure, Method 2 fires targeted attacks
 instead of guessing blind.
 
-Automatically starts the listener, delivers attacks, waits for results,
-and runs the verdict aggregator -- no manual steps needed.
+Now starts all 3 Pillar interceptors alongside the HTTP listener:
+  - Pillar A: Egress proxy (port 8080) catches outbound HTTP/S to any destination
+  - Pillar B: DNS sinkhole (port 5353) catches DNS tunneling exfiltration
+  - Pillar C: Volume auditor (post-execution) catches file/exec/package leaks
+
+Automatically starts interceptors, delivers all 8 attack types, waits for
+results, runs volume audit, and produces unified attributed verdict.
 
 Usage:
     python run_full_attack_suite.py /path/to/machine_report.json
@@ -25,6 +30,12 @@ from http.server import HTTPServer
 from pathlib import Path
 
 METHOD2_DIR = Path(__file__).parent
+PROJECT_ROOT = METHOD2_DIR.parent
+
+# Add project root to path for clean imports
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 DELIVERY_SCRIPT = METHOD2_DIR / "delivery_driver" / "deliver.py"
 BUILD_REPLICA_SCRIPT = METHOD2_DIR / "replica_builder" / "build_replica.py"
 CANARY_SEEDER_SCRIPT = METHOD2_DIR / "canary_seeder" / "seed_canaries.py"
@@ -32,8 +43,19 @@ RESET_SCRIPT = METHOD2_DIR / "reset_test_environment.py"
 VERDICT_SCRIPT = METHOD2_DIR / "verdict_aggregator" / "aggregate_verdict.py"
 CANARIES_PATH = METHOD2_DIR / "canary_seeder" / "canaries.json"
 HITS_PATH = METHOD2_DIR / "listener_service" / "canary_hits.json"
+INTERCEPT_HITS_PATH = METHOD2_DIR / "listener_service" / "intercept_hits.json"
 
-ATTACK_TYPES = ["direct_injection", "indirect_injection", "tool_poisoning"]
+# All 8 attack types covering all 6 exfiltration channels
+ATTACK_TYPES = [
+    "direct_injection",         # HTTP webhook via chat message
+    "indirect_injection",       # HTTP webhook via watched file
+    "tool_poisoning",           # HTTP webhook via tool description
+    "dns_exfil_injection",      # DNS tunneling via watched file
+    "file_exfil_injection",     # File write via watched file
+    "exec_exfil_injection",     # Shell exec via chat message
+    "package_install_injection", # Package install via chat message
+    "tool_abuse_injection",     # Tool abuse via tool description
+]
 
 # How long to wait after all attacks are delivered for the agent to process
 # and exfiltrate canaries (seconds)
@@ -42,7 +64,7 @@ EXFILTRATION_WINDOW = 15
 PYTHON = sys.executable
 
 
-def get_credential_targets(machine_report: dict, max_targets: int = 3) -> list:
+def get_credential_targets(machine_report: dict, max_targets: int = 8) -> list:
     """Pull the highest-ranked credential-type nodes from Method 1's blast
     radius ranking -- these are the targets Method 2 will attack."""
     targets = []
@@ -64,18 +86,56 @@ def run(cmd: list, description: str):
 
 
 def start_listener_background():
-    """Start the canary listener as a background thread so we don't need
-    a separate terminal."""
-    PROJECT_ROOT = METHOD2_DIR.parent
-    if str(PROJECT_ROOT) not in sys.path:
-        sys.path.insert(0, str(PROJECT_ROOT))
+    """Start the canary HTTP listener as a background thread."""
     from method2.listener_service.listener import CanaryListenerHandler
 
     server = HTTPServer(("0.0.0.0", 9000), CanaryListenerHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    print("[orchestrator] canary listener started on port 9000 (background thread)")
+    print("[orchestrator] Pillar A (legacy): HTTP canary listener started on port 9000")
     return server
+
+
+def start_egress_interceptor():
+    """Start Pillar A: transparent HTTP egress proxy."""
+    try:
+        from method2.interceptors.egress_interceptor import start_egress_interceptor as _start
+        server = _start(port=8080)
+        print("[orchestrator] Pillar A: egress interceptor started on port 8080")
+        return server
+    except Exception as e:
+        print(f"[orchestrator] WARNING: Pillar A failed to start: {e}")
+        return None
+
+
+def start_dns_sinkhole():
+    """Start Pillar B: DNS sinkhole interceptor."""
+    try:
+        from method2.interceptors.dns_sinkhole import start_dns_sinkhole as _start
+        sinkhole = _start(port=5353)
+        print("[orchestrator] Pillar B: DNS sinkhole started on port 5353")
+        return sinkhole
+    except Exception as e:
+        print(f"[orchestrator] WARNING: Pillar B failed to start: {e}")
+        return None
+
+
+def run_volume_audit():
+    """Run Pillar C: post-execution volume & process auditor."""
+    try:
+        from method2.interceptors.volume_auditor import run_audit
+        replica_dir = METHOD2_DIR / "replica_builder"
+        scan_dirs = [
+            replica_dir / "runtime_output",
+            replica_dir / "runtime_watched",
+            replica_dir / "runtime_chat_inbox",
+        ]
+        total = run_audit(scan_dirs)
+        print(f"[orchestrator] Pillar C: volume audit complete ({total} canary token(s) found)")
+        return total
+    except Exception as e:
+        print(f"[orchestrator] WARNING: Pillar C audit failed: {e}")
+        return 0
 
 
 if __name__ == "__main__":
@@ -91,19 +151,21 @@ if __name__ == "__main__":
         print("[orchestrator] no credential targets found in machine_report.json")
         sys.exit(1)
 
-    # Pair each attack type with a distinct target, so all three attack types
-    # get exercised against the top-ranked exposures from Method 1.
-    pairings = list(zip(ATTACK_TYPES, targets))
+    # Pair each attack type with a credential target, cycling targets if needed
+    pairings = []
+    for i, attack_type in enumerate(ATTACK_TYPES):
+        target = targets[i % len(targets)]
+        pairings.append((attack_type, target))
 
     print(f"[orchestrator] Method 1 identified these top targets: {targets}")
-    print(f"[orchestrator] running {len(pairings)} attack(s), one per type\n")
+    print(f"[orchestrator] running {len(pairings)} attack(s) across all 6 exfiltration channels\n")
 
     report_path = Path(sys.argv[1]).resolve()
     output_dir = report_path.parent
 
     normalized_config_path = output_dir / "normalized_config.json"
     if not normalized_config_path.exists():
-        normalized_config_path = METHOD2_DIR.parent / "output" / "normalized_config.json"
+        normalized_config_path = PROJECT_ROOT / "output" / "normalized_config.json"
 
     if not normalized_config_path.exists():
         print(f"[orchestrator] ERROR: normalized config not found at {normalized_config_path}")
@@ -111,47 +173,80 @@ if __name__ == "__main__":
 
     canaries_path = str(CANARIES_PATH)
 
-    print(f"[orchestrator] Method 1 identified these top targets: {targets}")
-    print(f"[orchestrator] running {len(pairings)} attack(s), one per type\n")
+    # Configure intercept hits path
+    from method2.interceptors.intercept_hits import set_hits_path
+    set_hits_path(INTERCEPT_HITS_PATH)
 
+    # Step 1: Reset test environment
     run([PYTHON, str(RESET_SCRIPT)], "resetting test environment")
 
+    # Step 2: Seed fresh canaries
     run([PYTHON, str(CANARY_SEEDER_SCRIPT), str(normalized_config_path)],
         "seeding fresh canaries")
 
-    # Check if docker is installed and available before building
+    # Step 3: Check Docker availability and build container
     docker_check = subprocess.run(["docker", "info"], capture_output=True)
-    if docker_check.returncode != 0:
+    docker_available = docker_check.returncode == 0
+
+    if not docker_available:
         print("\n[orchestrator] NOTICE: Docker daemon is not active on this machine.")
         print("[orchestrator] Container replica execution skipped.")
-        print("[orchestrator] (Static scan, risk rules, canary seeding, and dry-run simulation are fully operational!)\n")
+        print("[orchestrator] Interceptors, payload delivery, and dry-run simulation are fully operational!\n")
     else:
         run([PYTHON, str(BUILD_REPLICA_SCRIPT), str(normalized_config_path), canaries_path],
             "building and starting sandbox replica")
 
-    # Start the listener BEFORE delivering attacks
-    listener_server = start_listener_background()
+    # Step 4: Start all interceptors
+    print("\n" + "=" * 60)
+    print("  STARTING INTERCEPTOR PILLARS")
+    print("=" * 60 + "\n")
 
-    print("[orchestrator] waiting 3s for container to stabilize...")
+    listener_server = start_listener_background()
+    egress_server = start_egress_interceptor()
+    dns_sinkhole = start_dns_sinkhole()
+
+    print("[orchestrator] waiting 3s for interceptors to stabilize...")
     time.sleep(3)
 
+    # Step 5: Deliver all 8 attack payloads
+    print("\n" + "=" * 60)
+    print("  DELIVERING ATTACK PAYLOADS (8 types, 6 exfiltration channels)")
+    print("=" * 60 + "\n")
+
+    tool_poisoning_delivered = False
     for attack_type, target in pairings:
         run([PYTHON, str(DELIVERY_SCRIPT), attack_type, target],
             f"delivering {attack_type} targeting {target}")
+        if "tool_poisoning" in attack_type or "tool_abuse" in attack_type:
+            tool_poisoning_delivered = True
 
-    if docker_check.returncode == 0 and "tool_poisoning" in [a for a, _ in pairings]:
+    # Restart container if tool descriptions were modified
+    if docker_available and tool_poisoning_delivered:
         run(["docker", "restart", "agent-sandbox-instance"],
-            "restarting container so tool_poisoning payload is picked up at startup")
+            "restarting container so tool_poisoning/tool_abuse payloads are picked up at startup")
 
-    print(f"\n[orchestrator] all attacks delivered.")
+    print(f"\n[orchestrator] all {len(pairings)} attacks delivered.")
     print(f"[orchestrator] waiting {EXFILTRATION_WINDOW}s for agent to process and exfiltrate...")
     time.sleep(EXFILTRATION_WINDOW)
 
-    # Shut down listener
-    listener_server.shutdown()
-    print("[orchestrator] listener stopped.")
+    # Step 6: Run Pillar C volume audit (post-execution)
+    print("\n" + "=" * 60)
+    print("  RUNNING POST-EXECUTION AUDITS (Pillar C)")
+    print("=" * 60 + "\n")
+    run_volume_audit()
 
-    # Auto-run verdict aggregator if canaries file exists
+    # Step 7: Shut down interceptors
+    print("\n[orchestrator] shutting down interceptors...")
+    listener_server.shutdown()
+    print("[orchestrator] HTTP listener stopped.")
+    if egress_server:
+        egress_server.shutdown()
+        print("[orchestrator] egress interceptor stopped.")
+    if dns_sinkhole:
+        dns_sinkhole.stop()
+        print("[orchestrator] DNS sinkhole stopped.")
+
+    # Step 8: Run verdict aggregator
     if Path(canaries_path).exists():
         print("\n[orchestrator] running verdict aggregator...")
         run([PYTHON, str(VERDICT_SCRIPT), canaries_path, str(HITS_PATH)],
