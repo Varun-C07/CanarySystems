@@ -150,6 +150,32 @@ def run_attack(machine_report_path: str):
         sys.exit(result.returncode)
 
 
+def run_advise():
+    """Run the AI remediation advisor (Groq) against whatever scan/attack
+    output already exists in output/. Requires 'scan' to have been run
+    first; picks up 'attack' output automatically if present, for
+    proof-backed advice instead of static-findings-only advice."""
+    machine_report_path = OUTPUT_DIR / "machine_report.json"
+    if not machine_report_path.exists():
+        print(f"Error: {machine_report_path} not found.")
+        print(f"Run '{PYTHON} run_pipeline.py scan <config_dir>' first.")
+        sys.exit(1)
+
+    cmd = [
+        PYTHON,
+        str(METHOD1_DIR / "remediation_advisor" / "groq_advisor.py"),
+        str(machine_report_path),
+    ]
+
+    verdict_path = OUTPUT_DIR / "verdict.json"
+    if verdict_path.exists():
+        cmd.append(str(verdict_path))
+
+    result = run_cmd(cmd, "Generating AI remediation advice (Groq)", capture=False)
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+
+
 def run_full(config_dir: str):
     """Run both Method 1 and Method 2 end-to-end."""
     machine_report_path = run_scan(config_dir)
@@ -175,12 +201,14 @@ Usage:
     {PYTHON} run_pipeline.py scan <config_dir>        Static scan (Method 1)
     {PYTHON} run_pipeline.py attack <machine_report>   Dynamic test (Method 2)
     {PYTHON} run_pipeline.py full <config_dir>         Both end-to-end
+    {PYTHON} run_pipeline.py advise                    AI remediation advice (Groq, needs GROQ_API_KEY)
     {PYTHON} run_pipeline.py kill                      Emergency stop
 
 Examples:
     {PYTHON} run_pipeline.py scan sample_configs/openclaw_default
     {PYTHON} run_pipeline.py full sample_configs/openclaw_default
     {PYTHON} run_pipeline.py attack output/machine_report.json
+    {PYTHON} run_pipeline.py advise
 """)
 
 
@@ -208,6 +236,12 @@ if __name__ == "__main__":
             print(f"Usage: {PYTHON} run_pipeline.py full <config_dir>")
             sys.exit(1)
         run_full(sys.argv[2])
+
+    elif command == "advise":
+        if len(sys.argv) != 2:
+            print(f"Usage: {PYTHON} run_pipeline.py advise")
+            sys.exit(1)
+        run_advise()
 
     elif command == "kill":
         run_kill()
