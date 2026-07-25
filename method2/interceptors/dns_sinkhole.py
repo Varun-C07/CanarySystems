@@ -25,6 +25,7 @@ Usage (standalone for testing):
     python dns_sinkhole.py [port]
 """
 
+import re
 import socket
 import struct
 import threading
@@ -90,6 +91,23 @@ def parse_dns_query_name(data: bytes) -> str:
         pass
 
     return ".".join(labels)
+
+
+ATTACK_ID_LABEL_PATTERN = re.compile(r"^attackid-(.+)$", re.IGNORECASE)
+
+
+def extract_attack_id(domain_name: str) -> str:
+    """Pull the attack_id back out of a parsed domain name, if fake_agent.py's
+    exfil_dns_tunnel() embedded one (as an "attackid-<id>" label -- see that
+    function). Matched by label content, not position, so this doesn't break
+    if the label ordering ever changes. Returns "" if no such label is
+    present (e.g. a hand-crafted query with no attack_id, or a query from
+    something other than this project's own fake_agent.py)."""
+    for label in domain_name.split("."):
+        match = ATTACK_ID_LABEL_PATTERN.match(label)
+        if match:
+            return match.group(1)
+    return ""
 
 
 def build_dns_response(query_data: bytes) -> bytes:
@@ -181,13 +199,14 @@ class DNSSinkhole:
             # Scan each label of the domain name for canary tokens
             canaries = scan_text_for_canaries(domain_name)
             if canaries:
+                attack_id = extract_attack_id(domain_name)
                 for canary in set(canaries):
                     log_intercept_hit(
                         channel="DNS_TUNNEL",
                         extracted_value=canary,
                         detail=f"DNS query for {domain_name} from {addr[0]}:{addr[1]}",
                         extracted_key="",
-                        attack_id="",
+                        attack_id=attack_id,
                     )
 
             # Respond with sinkhole address (127.0.0.1) so the process doesn't hang

