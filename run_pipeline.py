@@ -134,11 +134,20 @@ def run_attack(machine_report_path: str):
         print(f"Run '{PYTHON} run_pipeline.py scan <config_dir>' first.")
         sys.exit(1)
 
-    run_cmd(
+    result = run_cmd(
         [PYTHON, str(METHOD2_DIR / "run_full_attack_suite.py"), machine_report_path],
         "Running Method 2: Dynamic canary injection test",
         capture=False,
     )
+    if result.returncode != 0:
+        # run_full_attack_suite.py already printed its own FATAL/error
+        # detail before exiting non-zero (e.g. the sandbox container
+        # failed to start) -- propagate that failure as OUR exit code too,
+        # so `python3 run_pipeline.py attack ...` is reliable for anything
+        # scripting against the shell exit code (CI, automation), not just
+        # for someone reading the console output.
+        print(f"\nMethod 2 failed (exit code {result.returncode}). See output above.")
+        sys.exit(result.returncode)
 
 
 def run_full(config_dir: str):

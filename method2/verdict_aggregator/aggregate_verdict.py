@@ -21,6 +21,7 @@ Usage:
 import json
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -83,6 +84,23 @@ def build_verdict(canaries: dict, hits: list) -> dict:
                     matching_hits.append(h)
 
         if matching_hits:
+            # matching_hits is built by iterating `hits` in whatever order
+            # canary_hits.json + intercept_hits.json happened to be
+            # concatenated in (merge_all_hits), which is NOT guaranteed to
+            # be chronological -- e.g. a real-time HTTP hit and a hit only
+            # discovered later by Pillar C's post-execution scan can appear
+            # in either order in that list regardless of which actually
+            # happened first. Sort explicitly so "first hit" is correct by
+            # guarantee, not by coincidence of write/merge order. Hits
+            # without a parseable timestamp sort last (treated as unknown,
+            # not as "earliest").
+            def _sort_key(h):
+                try:
+                    return datetime.fromisoformat(h.get("timestamp", ""))
+                except ValueError:
+                    return datetime.max.replace(tzinfo=timezone.utc)
+
+            matching_hits = sorted(matching_hits, key=_sort_key)
             first_hit = matching_hits[0]
 
             # Group hits by attack type

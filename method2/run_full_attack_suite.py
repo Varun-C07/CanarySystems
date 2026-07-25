@@ -61,6 +61,10 @@ ATTACK_TYPES = [
 # and exfiltrate canaries (seconds)
 EXFILTRATION_WINDOW = 15
 
+# Extra settle time after a mid-run `docker restart`, on top of
+# EXFILTRATION_WINDOW -- see the comment at the restart call site.
+RESTART_SETTLE_TIME = 5
+
 PYTHON = sys.executable
 
 
@@ -76,11 +80,22 @@ def get_credential_targets(machine_report: dict, max_targets: int = 8) -> list:
     return targets
 
 
-def run(cmd: list, description: str):
+def run(cmd: list, description: str, fatal: bool = False):
+    """Run a subprocess step. If `fatal` is True and the command fails, abort
+    the whole run immediately -- used for steps whose failure means the
+    sandbox isn't actually running, so continuing would risk producing a
+    false 'all safe' verdict instead of a trustworthy one."""
     print(f"\n[orchestrator] {description}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     print(result.stdout)
     if result.returncode != 0:
+        if fatal:
+            print(f"[orchestrator] FATAL: {description} failed -- aborting.")
+            print(result.stderr)
+            print("[orchestrator] Cannot proceed: the sandbox is not in the "
+                  "state this test run requires, so no verdict would be "
+                  "trustworthy. No attacks were delivered; no verdict was produced.")
+            sys.exit(1)
         print(f"[orchestrator] WARNING: command failed: {result.stderr}")
     return result
 
@@ -130,7 +145,11 @@ def run_volume_audit():
             replica_dir / "runtime_watched",
             replica_dir / "runtime_chat_inbox",
         ]
-        total = run_audit(scan_dirs)
+        canaries = {}
+        if CANARIES_PATH.exists():
+            with open(CANARIES_PATH, "r") as f:
+                canaries = json.load(f)
+        total = run_audit(scan_dirs, canaries=canaries)
         print(f"[orchestrator] Pillar C: volume audit complete ({total} canary token(s) found)")
         return total
     except Exception as e:
@@ -194,7 +213,7 @@ if __name__ == "__main__":
         print("[orchestrator] Interceptors, payload delivery, and dry-run simulation are fully operational!\n")
     else:
         run([PYTHON, str(BUILD_REPLICA_SCRIPT), str(normalized_config_path), canaries_path],
-            "building and starting sandbox replica")
+            "building and starting sandbox replica", fatal=True)
 
     # Step 4: Start all interceptors
     print("\n" + "=" * 60)
@@ -223,7 +242,19 @@ if __name__ == "__main__":
     # Restart container if tool descriptions were modified
     if docker_available and tool_poisoning_delivered:
         run(["docker", "restart", "agent-sandbox-instance"],
-            "restarting container so tool_poisoning/tool_abuse payloads are picked up at startup")
+            "restarting container so tool_poisoning/tool_abuse payloads are picked up at startup",
+            fatal=True)
+        # `docker restart` itself took ~10s in local testing (stop + start +
+        # fake_agent.py reinitializing), which was previously eating into
+        # the same EXFILTRATION_WINDOW budget used for normal processing --
+        # a real design smell even though it didn't reproduce a failure in
+        # repeated testing after the dedup-persistence fix (see fake_agent.py
+        # DEDUP_STATE_PATH) removed most of the restart-induced noise that
+        # made this flaky before. This explicit settle buffer keeps restart
+        # recovery from silently competing with the window below.
+        print(f"[orchestrator] waiting {RESTART_SETTLE_TIME}s for the "
+              f"restarted container to finish reinitializing...")
+        time.sleep(RESTART_SETTLE_TIME)
 
     print(f"\n[orchestrator] all {len(pairings)} attacks delivered.")
     print(f"[orchestrator] waiting {EXFILTRATION_WINDOW}s for agent to process and exfiltrate...")
@@ -236,11 +267,19 @@ if __name__ == "__main__":
     run_volume_audit()
 
     # Step 7: Shut down interceptors
+    # .shutdown() only stops the serve_forever() loop -- it does NOT release
+    # the underlying listening socket. .server_close() does. Without it the
+    # socket stays technically open until process exit; harmless for this
+    # one-shot script today, but real if this orchestrator were ever called
+    # repeatedly within one long-lived process instead of a fresh subprocess
+    # per run. dns_sinkhole.stop() already closes its own socket internally.
     print("\n[orchestrator] shutting down interceptors...")
     listener_server.shutdown()
+    listener_server.server_close()
     print("[orchestrator] HTTP listener stopped.")
     if egress_server:
         egress_server.shutdown()
+        egress_server.server_close()
         print("[orchestrator] egress interceptor stopped.")
     if dns_sinkhole:
         dns_sinkhole.stop()

@@ -10,12 +10,25 @@ the HTTP listener's canary_hits.json for a unified, multi-channel verdict.
 """
 
 import json
+import os
 import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Thread-safe lock for concurrent writes from multiple interceptors
+try:
+    import fcntl
+    _HAVE_FCNTL = True
+except ImportError:
+    # Windows has no fcntl -- fall back to in-process-only locking there.
+    # Every writer in this project (interceptors, orchestrator) runs on
+    # POSIX (macOS dev machines, Linux in Docker), so this is a documented
+    # gap, not an active one.
+    _HAVE_FCNTL = False
+
+# In-process thread lock: cheap fast path so threads in the SAME process
+# (the normal case -- all 3 pillars run as threads inside one orchestrator
+# process) don't even need to touch the filesystem lock below to serialize.
 _write_lock = threading.Lock()
 
 # Default path -- overridden by orchestrator at startup
@@ -32,10 +45,21 @@ def set_hits_path(path: Path):
 
 
 def load_intercept_hits() -> list:
-    if INTERCEPT_HITS_PATH.exists():
+    """Returns [] if the file is missing, unreadable, or contains invalid
+    JSON (e.g. left truncated by a process killed mid-write) -- a bad hits
+    file should never crash a caller (an interceptor logging a new hit, or
+    aggregate_verdict.py reading the final results). See log_intercept_hit's
+    atomic write below, which is what actually prevents this file from
+    ending up truncated/invalid in the first place."""
+    if not INTERCEPT_HITS_PATH.exists():
+        return []
+    try:
         with open(INTERCEPT_HITS_PATH, "r") as f:
             return json.load(f)
-    return []
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"[interceptor] WARNING: {INTERCEPT_HITS_PATH} is unreadable "
+              f"({e}) -- treating as empty rather than crashing.")
+        return []
 
 
 def log_intercept_hit(
@@ -73,11 +97,42 @@ def log_intercept_hit(
             hit["attack_type"] = parts[0]
 
     with _write_lock:
-        hits = load_intercept_hits()
-        hits.append(hit)
         INTERCEPT_HITS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(INTERCEPT_HITS_PATH, "w") as f:
-            json.dump(hits, f, indent=2)
+        lock_path = INTERCEPT_HITS_PATH.with_suffix(".json.lock")
+        lock_file = open(lock_path, "a")
+        try:
+            if _HAVE_FCNTL:
+                # Cross-PROCESS mutual exclusion. The in-process _write_lock
+                # above only protects threads within one interpreter -- each
+                # of the three interceptor pillars can also be launched as
+                # its own standalone `python x.py` process (see each
+                # module's own "Usage (standalone for testing)" docstring),
+                # and without this, two separate processes racing on the
+                # same read-modify-write cycle can silently drop a hit, or
+                # (worse, empirically reproduced) collide on a shared temp
+                # filename and crash with FileNotFoundError. flock() blocks
+                # here until any other process's lock is released.
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
+            hits = load_intercept_hits()
+            hits.append(hit)
+            # Atomic write: write to a temp file UNIQUE to this process+thread
+            # (so concurrent writers never share/collide on the same temp
+            # path even outside the lock window), then rename over the
+            # target. os.replace() is atomic on POSIX and Windows, so a
+            # process killed mid-write leaves either the old complete file
+            # or the new complete file -- never a truncated one.
+            tmp_path = INTERCEPT_HITS_PATH.parent / (
+                f"{INTERCEPT_HITS_PATH.name}.{os.getpid()}."
+                f"{threading.get_ident()}.tmp"
+            )
+            with open(tmp_path, "w") as f:
+                json.dump(hits, f, indent=2)
+            os.replace(tmp_path, INTERCEPT_HITS_PATH)
+        finally:
+            if _HAVE_FCNTL:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
 
     print(f"[interceptor] CANARY CAUGHT via {channel}: {extracted_value[:40]}... "
           f"(detail: {detail[:60]})")

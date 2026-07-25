@@ -31,38 +31,49 @@ def generate_run_id() -> str:
     return f"{timestamp}_{rand}"
 
 
-def generate_canary_value(key: str, run_id: str) -> str:
+def generate_canary_value(key: str, run_id: str) -> tuple:
     """
     Produces a fake-but-realistic-looking value for a given credential key,
     with the run_id embedded so it's traceable back to this exact test run.
+
+    Returns (value, embedded_tag). embedded_tag is the EXACT substring
+    actually embedded in `value` for this credential -- not necessarily
+    the full "CANARY_{run_id}" tag, since some formats truncate it to fit
+    a real-world constraint (e.g. AWS Access Key IDs are always AKIA +
+    16 chars, so the tag gets cut short to fit). Callers must store this
+    returned tag, not a separately-computed generic one, or downstream
+    substring matching (aggregate_verdict.py: `canary_tag in
+    extracted_value`) silently fails for whichever credential's tag got
+    truncated on the way into its value.
     """
-    tag = f"CANARY_{run_id}"
+    full_tag = f"CANARY_{run_id}"
 
     if "STRIPE" in key.upper():
-        return f"sk_test_{tag}"
+        return f"sk_test_{full_tag}", full_tag
     if "AWS_ACCESS_KEY_ID" in key.upper():
-        return f"AKIA{tag.upper()[:16]}"
+        truncated_tag = full_tag.upper()[:16]
+        return f"AKIA{truncated_tag}", truncated_tag
     if "AWS_SECRET" in key.upper():
-        return f"{tag}_awssecretfake"
+        return f"{full_tag}_awssecretfake", full_tag
     if "GITHUB" in key.upper():
-        return f"ghp_{tag}"
+        return f"ghp_{full_tag}", full_tag
     if "OPENAI" in key.upper():
-        return f"sk-{tag}"
+        return f"sk-{full_tag}", full_tag
     if "DATABASE_URL" in key.upper():
-        return f"postgres://canary:{tag}@localhost:5432/canarydb"
+        return f"postgres://canary:{full_tag}@localhost:5432/canarydb", full_tag
     # generic fallback for any other credential-shaped key
-    return f"{tag}_genericfake"
+    return f"{full_tag}_genericfake", full_tag
 
 
 def build_canaries(normalized_config: dict, run_id: str) -> dict:
     canaries = {}
     for cred in normalized_config.get("credentials", []):
         key = cred["key"]
-        value = generate_canary_value(key, run_id)
+        value, embedded_tag = generate_canary_value(key, run_id)
         canaries[key] = {
             "value": value,
             "run_id": run_id,
-            "tag": f"CANARY_{run_id}",
+            "tag": embedded_tag,
         }
     return canaries
 

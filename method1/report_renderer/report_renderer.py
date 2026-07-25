@@ -19,7 +19,20 @@ SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 def build_machine_report(findings: list, graph_output: dict) -> dict:
     """The JSON that Method 2 will consume to know which high-risk paths to attack."""
     failed_findings = [f for f in findings if not f["passed"]]
-    top_targets = graph_output["ranked_blast_radius"][:5]
+    ranked = graph_output["ranked_blast_radius"]
+
+    # Method 2 can only attack credential-type nodes, so every credential
+    # must always be included here regardless of rank position -- a
+    # non-credential node (e.g. network_exposure) outranking it must never
+    # silently push a real credential target out of scope. Keep up to 5 of
+    # the highest-ranked non-credential nodes too, for broader context.
+    credential_targets = [t for t in ranked if t["type"] == "credential"]
+    non_credential_top = [t for t in ranked if t["type"] != "credential"][:5]
+    top_targets = sorted(
+        credential_targets + non_credential_top,
+        key=lambda t: t["blast_radius_score"],
+        reverse=True,
+    )
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),

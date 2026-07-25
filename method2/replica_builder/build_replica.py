@@ -7,7 +7,8 @@ Method 1, with real credentials swapped for canaries. Never touches real secrets
 Now includes:
   - runtime_output/ volume mount for Pillar C file/exec/package exfiltration detection
   - HTTP_PROXY/HTTPS_PROXY env vars for Pillar A egress interception
-  - DNS override for Pillar B sinkhole interception
+  - --add-host to guarantee host.docker.internal resolves, so fake_agent.py
+    can reach the Pillar B sinkhole directly (see dns_sinkhole.py)
 
 Usage:
     python build_replica.py /path/to/normalized_config.json /path/to/canaries.json
@@ -83,8 +84,15 @@ def run_container():
             "-v", f"{WATCHED_MOUNT_DIR}:/agent/watched",
             "-v", f"{CHAT_INBOX_MOUNT_DIR}:/agent/chat_inbox",
             "-v", f"{OUTPUT_MOUNT_DIR}:/agent/output",
-            # DNS override: point to host's Pillar B sinkhole (port 5353)
-            "--dns", "host-gateway",
+            # Ensure host.docker.internal reliably resolves inside the container
+            # (auto-provided on Docker Desktop, but not guaranteed on Linux).
+            # NOTE: this does NOT redirect real DNS traffic to the Pillar B
+            # sinkhole -- standard resolvers always use port 53, and the
+            # sinkhole deliberately listens on 5353 to avoid requiring root.
+            # fake_agent.py's DNS exfil channel instead sends its query
+            # directly to host.docker.internal:5353, bypassing OS-level
+            # DNS resolution entirely. See dns_sinkhole.py.
+            "--add-host=host.docker.internal:host-gateway",
             IMAGE_NAME,
         ],
         capture_output=True, text=True

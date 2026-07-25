@@ -1,6 +1,19 @@
 """Rule: flag MCP servers with filesystem write access to root or unscoped write access."""
 
 ROOT_PATH_PATTERNS = {"/", "C:\\", "c:\\", "*", "root"}
+FILESYSTEM_NAME_MARKERS = ("filesystem", "fs-", "-fs")
+
+
+def _is_filesystem_tool(server: dict, raw_config: dict, raw_entry: dict) -> bool:
+    """'allowed_paths' is a filesystem-specific config concept. A tool that
+    never declares one (e.g. an email/messaging tool) isn't 'unrestricted' --
+    it simply doesn't operate on the filesystem, so the root-path check
+    below doesn't apply to it at all."""
+    if "allowed_paths" in raw_config or "allowed_paths" in raw_entry.get("config", {}):
+        return True
+    name_and_url = f"{server.get('name', '')} {server.get('url', '')}".lower()
+    return any(marker in name_and_url for marker in FILESYSTEM_NAME_MARKERS)
+
 
 def check(config: dict) -> dict:
     findings = []
@@ -8,6 +21,9 @@ def check(config: dict) -> dict:
         raw_config = server.get("raw_config", {})
         raw_entry = server.get("raw_entry", {})
         scopes = server.get("scopes", [])
+
+        if not _is_filesystem_tool(server, raw_config, raw_entry):
+            continue
 
         # Check standard allowed_paths
         allowed_paths = raw_config.get("allowed_paths", []) or raw_entry.get("allowed_paths", [])
@@ -18,8 +34,8 @@ def check(config: dict) -> dict:
         perms = raw_entry.get("permissions", {})
 
         is_write_scoped = (
-            "write" in scopes or 
-            caps.get("filesystem", {}).get("write") or 
+            "write" in scopes or
+            caps.get("filesystem", {}).get("write") or
             perms.get("write")
         )
 

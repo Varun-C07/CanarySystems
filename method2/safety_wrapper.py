@@ -97,7 +97,7 @@ No systems will be touched. This shows what WOULD happen in a live run.
     from method2.canary_seeder.seed_canaries import generate_canary_value
     for target in credential_targets:
         key = target["label"]
-        example = generate_canary_value(key, "DRYRUN_example123")
+        example, _tag = generate_canary_value(key, "DRYRUN_example123")
         print(f"  {key} -> {example}")
     print()
 
