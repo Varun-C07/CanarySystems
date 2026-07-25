@@ -176,6 +176,27 @@ def run_advise():
         sys.exit(result.returncode)
 
 
+def run_report():
+    """Render the single-page HTML dashboard from whatever scan/attack/advise
+    output already exists in output/. Requires 'scan' to have been run
+    first; picks up 'attack' and 'advise' output automatically if present."""
+    machine_report_path = OUTPUT_DIR / "machine_report.json"
+    if not machine_report_path.exists():
+        print(f"Error: {machine_report_path} not found.")
+        print(f"Run '{PYTHON} run_pipeline.py scan <config_dir>' first.")
+        sys.exit(1)
+
+    cmd = [
+        PYTHON,
+        str(METHOD1_DIR / "report_renderer" / "render_dashboard.py"),
+        str(OUTPUT_DIR),
+    ]
+
+    result = run_cmd(cmd, "Rendering HTML dashboard", capture=False)
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+
+
 def run_full(config_dir: str):
     """Run both Method 1 and Method 2 end-to-end."""
     machine_report_path = run_scan(config_dir)
@@ -202,6 +223,7 @@ Usage:
     {PYTHON} run_pipeline.py attack <machine_report>   Dynamic test (Method 2)
     {PYTHON} run_pipeline.py full <config_dir>         Both end-to-end
     {PYTHON} run_pipeline.py advise                    AI remediation advice (Groq, needs GROQ_API_KEY)
+    {PYTHON} run_pipeline.py report                    Render HTML dashboard (output/dashboard.html)
     {PYTHON} run_pipeline.py kill                      Emergency stop
 
 Examples:
@@ -209,6 +231,7 @@ Examples:
     {PYTHON} run_pipeline.py full sample_configs/openclaw_default
     {PYTHON} run_pipeline.py attack output/machine_report.json
     {PYTHON} run_pipeline.py advise
+    {PYTHON} run_pipeline.py report
 """)
 
 
@@ -242,6 +265,12 @@ if __name__ == "__main__":
             print(f"Usage: {PYTHON} run_pipeline.py advise")
             sys.exit(1)
         run_advise()
+
+    elif command == "report":
+        if len(sys.argv) != 2:
+            print(f"Usage: {PYTHON} run_pipeline.py report")
+            sys.exit(1)
+        run_report()
 
     elif command == "kill":
         run_kill()

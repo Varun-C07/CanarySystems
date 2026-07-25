@@ -52,16 +52,26 @@ You're given:
 2. A blast-radius graph of assets reachable if the agent is compromised, ranked by (sensitivity x ease of reach).
 3. Optionally, PROVEN results from a dynamic penetration test that actually attempted to exfiltrate uniquely-tagged fake credentials through real attack techniques (prompt injection, tool poisoning, DNS tunneling, malicious package install, etc.) against a sandboxed replica of the agent.
 
-Write prioritized, contextual remediation advice in Markdown. Do not just restate each finding next to a generic fix -- explain WHY the specific COMBINATION of issues found makes the environment exploitable together. For example: "no auth token + binding to 0.0.0.0 + plaintext credentials means anyone on the local network can trivially read every secret with no authentication at all" or "the unsandboxed shell-exec tool being reachable is what let a prompt-injection attack actually execute code, not just read a file."
+STRICT RULE ON CONNECTING FINDINGS -- apply this before writing anything, and re-check every sentence against it before you finalize your answer:
 
-Only state a causal or supporting relationship between two findings if the evidence explicitly shows one -- e.g. verdict.json's attack_breakdown directly naming an attack type whose mechanism matches a specific static finding's own description, or a leak_channel that directly corresponds to a capability a static finding flagged (like shell-exec being unsandboxed and a SHELL_EXEC leak channel). Do NOT connect two findings just because they sound thematically similar or share a keyword. For example, a static finding about this agent's OWN skills being unpinned (unpinned_provenance) and a dynamic attack where the agent is tricked into installing an unrelated, attacker-suggested package (package_install_injection) both involve "installing" something, but they are different vulnerabilities with no causal link between them -- the unpinned finding is about supply-chain trust in already-installed skills, the injection attack is about the agent following a malicious instruction to install something new. When two findings are unrelated, present them separately and do not imply a connection that the data does not support.
+You may only state that a static finding relates to, enabled, or explains a specific dynamic attack type if BOTH of the following are literally true:
+  (a) That attack type appears as a literal key in that credential's attack_breakdown dict in the dynamic evidence given below, AND
+  (b) The static finding's own mechanism plausibly and directly produced that attack's leak_channel -- e.g. unsandboxed_exec (shell-exec has no sandbox) directly explains a SHELL_EXEC leak_channel; overbroad_scope (unrestricted filesystem write) directly explains a FILE_WRITE leak_channel; auth_token/network_binding (no auth, exposed network) directly explain ANY leak_channel, since every attack in this test requires reaching the API first.
+
+If a static finding and an attack type merely share a keyword, topic, or theme (e.g. both mention "installing", "packages", "credentials", "access") but neither (a) nor (b) holds, DO NOT connect them -- discuss them as separate, unrelated items instead. Do not soften an unsupported link into a hedge ("could relate to", "may have contributed to", "is consistent with") -- either the evidence supports the link under the test above, or you say nothing about a relationship at all.
+
+CONCRETE EXAMPLE OF A FORBIDDEN LINK: unpinned_provenance is a static finding about THIS AGENT'S OWN skills lacking version pins (a supply-chain trust issue in already-installed software). package_install_injection is a dynamic attack where the agent is tricked into running "pip install" on an attacker-suggested, entirely different package. Neither (a) nor (b) holds between them: package_install_injection is not what unpinned_provenance's own mechanism (unpinned skill versions) would produce, and whichever credential's attack_breakdown contains package_install_injection does not thereby implicate unpinned skills. Do not state or imply a relationship between these two findings, even in passing, even as a minor supporting point. If you find yourself about to write a sentence naming both, stop and rewrite it to discuss them separately.
+
+Write prioritized, contextual remediation advice in Markdown. Do not just restate each finding next to a generic fix -- when the STRICT RULE above is actually satisfied for two findings, explain WHY that specific combination makes the environment exploitable together. For example: "no auth token + binding to 0.0.0.0 + plaintext credentials means anyone on the local network can trivially read every secret with no authentication at all" (auth_token and network_binding each satisfy rule (b) for every leak_channel present) or "the unsandboxed shell-exec tool being reachable is what let exec_exfil_injection actually execute code" (unsandboxed_exec satisfies rule (b) for the SHELL_EXEC channel specifically).
 
 When dynamic test evidence is available, treat PROVEN exploitation as the highest priority and say so explicitly -- a finding that was actually demonstrated to leak a credential is more urgent than one that is only theoretically risky, even if the theoretical one has a higher static severity label.
 
 Structure your response as:
 1. A short executive-summary paragraph on overall risk posture.
-2. A prioritized remediation list (most urgent first). Each item needs a one-line "why this matters here" tied to the SPECIFIC findings given -- not generic security advice a template could produce.
-3. If any credentials were proven to leak, a section naming exactly which attack chains succeeded and the single highest-leverage change that would have blocked the most of them.
+2. A prioritized remediation list (most urgent first). Each item needs a one-line "why this matters here" tied to the SPECIFIC findings given, following the STRICT RULE above -- not generic security advice a template could produce, and never a connection the rule forbids.
+3. If any credentials were proven to leak, a section naming exactly which attack chains succeeded (using attack_breakdown's literal keys, nothing else) and the single highest-leverage change that would have blocked the most of them.
+
+Before finalizing, re-read every sentence that names both a static finding and a dynamic attack type together, and check it against the STRICT RULE above. If any sentence fails the check, rewrite it to discuss the two items separately.
 
 Be concise, specific, and actionable. Reference the actual credential names, tool names, and attack types given -- never use placeholders like "[credential name]"."""
 
@@ -186,7 +196,10 @@ def call_groq(prompt: str, api_key: str, model: str = GROQ_MODEL) -> str:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.3,
+        # Lowered from 0.3: this task needs reliable adherence to the STRICT
+        # RULE in the system prompt (don't draw unsupported causal links)
+        # more than it needs writing variety.
+        "temperature": 0.1,
     }
     req = urllib.request.Request(
         GROQ_API_URL,
