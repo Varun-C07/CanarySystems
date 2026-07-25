@@ -33,7 +33,9 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 # it (shutdown 2026-08-16) and its own docs recommend migrating to
 # openai/gpt-oss-120b -- that's what we use. See:
 # https://console.groq.com/docs/deprecations
-GROQ_MODEL = "openai/gpt-oss-120b"
+# Overridable via GROQ_MODEL env var so a future deprecation (there will be
+# one) doesn't require a code change to work around.
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
 REQUEST_TIMEOUT = 60
 
@@ -82,11 +84,40 @@ class GroqAdvisorError(Exception):
 
 
 def load_json(path: Path) -> dict:
-    with open(path, "r") as f:
-        return json.load(f)
+    """Load and parse a JSON file. Exits with a clean, actionable message
+    (never a raw traceback) if the file contains invalid JSON -- e.g. left
+    truncated by a process that was killed mid-write."""
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"[remediation_advisor] ERROR: {path} contains invalid JSON ({e}).")
+        print(f"[remediation_advisor] It may be corrupted or from an interrupted "
+              f"run -- re-run the step that produces it.")
+        sys.exit(1)
+
+
+def _warn_if_stale(reference_path: Path, dependent_path: Path, dependent_label: str):
+    """Warn (don't fail) if `dependent_path` is older than `reference_path`.
+    machine_report.json/verdict.json carry no run-id or cross-reference to
+    each other, so an older verdict.json here most likely means it's from
+    a PREVIOUS, unrelated scan -- e.g. scan config A, attack (verdict.json
+    for A), re-scan config B (new machine_report.json), forget to re-run
+    attack. Without this check, advice would silently be generated as if
+    B's static findings and A's proven-attack evidence were one audit."""
+    try:
+        if dependent_path.stat().st_mtime < reference_path.stat().st_mtime:
+            print(f"[remediation_advisor] WARNING: {dependent_label} ({dependent_path}) is "
+                  f"OLDER than {reference_path.name} -- it may be from a previous scan run "
+                  f"and not correspond to these findings. Consider re-running "
+                  f"'run_pipeline.py attack' first.")
+    except OSError:
+        pass  # can't stat either file -- not worth failing the whole run over
 
 
 def _summarize_failed_rules(failed_rules: list) -> str:
+    """Render machine_report.json's failed_rules as a bulleted list for
+    the prompt, one line per finding with its severity/category/text."""
     if not failed_rules:
         return "None -- every static check passed."
     lines = []
@@ -99,6 +130,8 @@ def _summarize_failed_rules(failed_rules: list) -> str:
 
 
 def _summarize_attack_targets(top_attack_targets: list) -> str:
+    """Render machine_report.json's top_attack_targets (the blast-radius
+    ranking) as a bulleted list for the prompt."""
     if not top_attack_targets:
         return "None identified."
     lines = []
@@ -113,6 +146,9 @@ def _summarize_attack_targets(top_attack_targets: list) -> str:
 
 
 def _summarize_verdict(verdict: dict) -> str:
+    """Render verdict.json's proven-exploitation results for the prompt:
+    which credentials leaked, via which channel/attack type, which stayed
+    safe, and a per-channel hit summary."""
     summary = verdict.get("summary", {})
     results = verdict.get("results", [])
 
@@ -269,6 +305,7 @@ def main():
         if verdict_path.exists():
             verdict = load_json(verdict_path)
             print(f"[remediation_advisor] including dynamic test evidence from {verdict_path}")
+            _warn_if_stale(machine_report_path, verdict_path, "verdict.json")
         else:
             print(f"[remediation_advisor] NOTE: verdict path given but not found: "
                   f"{verdict_path} -- continuing with static findings only.")
@@ -285,8 +322,12 @@ def main():
         print(f"[remediation_advisor] ERROR: {e}")
         sys.exit(1)
 
-    output_path = Path(__file__).parent.parent.parent / "output" / "ai_remediation.md"
-    output_path.parent.mkdir(exist_ok=True)
+    # Write next to wherever machine_report.json actually came from, not a
+    # hardcoded default -- matches render_dashboard.py's behavior and keeps
+    # this usable with a non-default output directory, which the usage
+    # string above already implies is supported.
+    output_path = machine_report_path.parent / "ai_remediation.md"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         f.write(advice)
 

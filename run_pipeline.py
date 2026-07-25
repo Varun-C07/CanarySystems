@@ -9,7 +9,17 @@ Usage:
     python run_pipeline.py full <config_dir>        Run both end-to-end
     python run_pipeline.py kill                     Emergency stop
 
-All outputs are saved to an 'output/' directory in the project root.
+All outputs are saved to an 'output/' directory in the project root, unless
+overridden via the AGENT_AUDITOR_OUTPUT_DIR environment variable, which
+applies consistently across scan/advise/report (every place this file's own
+OUTPUT_DIR constant is used).
+
+Note: 'attack' delegates to method2/run_full_attack_suite.py, which along
+with aggregate_verdict.py still writes verdict.json to a hardcoded
+<project_root>/output/ regardless of this override -- those are Method 2
+internals, out of scope for this override. If you use
+AGENT_AUDITOR_OUTPUT_DIR, 'attack' output currently still lands in the
+default output/ dir.
 """
 
 import json
@@ -21,7 +31,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 METHOD1_DIR = PROJECT_ROOT / "method1"
 METHOD2_DIR = PROJECT_ROOT / "method2"
-OUTPUT_DIR = PROJECT_ROOT / "output"
+OUTPUT_DIR = Path(os.environ.get("AGENT_AUDITOR_OUTPUT_DIR", str(PROJECT_ROOT / "output")))
 
 PYTHON = sys.executable
 
@@ -45,6 +55,24 @@ def run_cmd(cmd: list, description: str, capture=True):
         return subprocess.run(cmd)
 
 
+def _write_step_output(result, path: Path, step_number: str, step_description: str):
+    """Write a subprocess step's stdout to `path` -- but only after
+    confirming the step actually succeeded. Without this check, a failed
+    step's empty/partial stdout gets written anyway, the next step then
+    reads that broken file and cascade-crashes too, and any *later*
+    output file this run never reaches (e.g. machine_report.json) is
+    silently left stale from a previous successful run with no
+    indication anything went wrong on this one."""
+    if result.returncode != 0:
+        print(f"\nError: {step_number} ({step_description}) failed (exit code {result.returncode}).")
+        print("See the output above for details. Fix the underlying issue and re-run the scan.")
+        print(f"Nothing past this step was run; earlier output files in {OUTPUT_DIR}/ "
+              f"(if any) are from a previous run and were not touched by this one.")
+        sys.exit(result.returncode)
+    with open(path, "w") as f:
+        f.write(result.stdout)
+
+
 def run_scan(config_dir: str):
     """Run the full Method 1 static scan pipeline."""
     ensure_output_dir()
@@ -66,8 +94,7 @@ def run_scan(config_dir: str):
         [PYTHON, str(METHOD1_DIR / "config_collector" / "collector.py"), config_dir],
         "Step 1/4: Collecting and normalizing agent configuration"
     )
-    with open(normalized_path, "w") as f:
-        f.write(result.stdout)
+    _write_step_output(result, normalized_path, "Step 1/4", "collecting and normalizing agent configuration")
     print(f"  -> Saved: {normalized_path}")
 
     # Step 2: Run rules
@@ -75,8 +102,7 @@ def run_scan(config_dir: str):
         [PYTHON, str(METHOD1_DIR / "rule_engine" / "engine.py"), str(normalized_path)],
         "Step 2/4: Running security rules against configuration"
     )
-    with open(findings_path, "w") as f:
-        f.write(result.stdout)
+    _write_step_output(result, findings_path, "Step 2/4", "running security rules")
     print(f"  -> Saved: {findings_path}")
 
     # Step 3: Build graph
@@ -84,16 +110,26 @@ def run_scan(config_dir: str):
         [PYTHON, str(METHOD1_DIR / "graph_builder" / "graph_builder.py"), str(normalized_path)],
         "Step 3/4: Building blast radius graph"
     )
-    with open(graph_path, "w") as f:
-        f.write(result.stdout)
+    _write_step_output(result, graph_path, "Step 3/4", "building blast radius graph")
     print(f"  -> Saved: {graph_path}")
 
     # Step 4: Render reports
-    # The report renderer writes to CWD, so we handle it ourselves
-    with open(findings_path, "r") as f:
-        findings = json.load(f)
-    with open(graph_path, "r") as f:
-        graph_output = json.load(f)
+    # The report renderer writes to CWD, so we handle it ourselves.
+    # By this point steps 1-3 are already confirmed to have succeeded (see
+    # _write_step_output above), so a JSONDecodeError here would mean the
+    # file was corrupted by something outside this run -- still worth a
+    # clean message instead of a raw traceback.
+    try:
+        with open(findings_path, "r") as f:
+            findings = json.load(f)
+        with open(graph_path, "r") as f:
+            graph_output = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"\nError: Step 4/4 failed -- {findings_path.name} or {graph_path.name} "
+              f"contains invalid JSON ({e}).")
+        print("These were just written by steps 2-3 of this same run, so this points "
+              "to a real bug rather than stale data. Please report it.")
+        sys.exit(1)
 
     # Import report renderer functions directly
     sys.path.insert(0, str(PROJECT_ROOT))

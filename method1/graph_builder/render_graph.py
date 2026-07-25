@@ -314,6 +314,18 @@ def _annotate_nodes(graph: dict, ranked: list) -> list:
     return nodes
 
 
+def _safe_json_for_script(obj) -> str:
+    """json.dumps() output embedded directly inside a <script> block is
+    vulnerable to premature tag closure: if the serialized string contains
+    a literal "</script>" substring -- e.g. from a malicious tool/skill
+    name in the scanned config -- the HTML PARSER closes the script tag
+    right there (it has no notion of "inside a JS string literal"), and
+    whatever follows can execute as a new, literal script tag. Escaping
+    "</" to "<\\/" is a no-op for JSON semantics (both parse to the same
+    string) but makes this byte sequence impossible to produce."""
+    return json.dumps(obj).replace("</", "<\\/")
+
+
 def render(graph_output: dict) -> str:
     graph = graph_output["graph"]
     ranked = graph_output.get("ranked_blast_radius", [])
@@ -322,9 +334,9 @@ def render(graph_output: dict) -> str:
     data = {"nodes": nodes, "edges": graph["edges"]}
 
     html = HTML_TEMPLATE
-    html = html.replace("__DATA_JSON__", json.dumps(data))
-    html = html.replace("__TYPE_COLORS_JSON__", json.dumps(TYPE_COLORS))
-    html = html.replace("__DEFAULT_COLOR_JSON__", json.dumps(DEFAULT_COLOR))
+    html = html.replace("__DATA_JSON__", _safe_json_for_script(data))
+    html = html.replace("__TYPE_COLORS_JSON__", _safe_json_for_script(TYPE_COLORS))
+    html = html.replace("__DEFAULT_COLOR_JSON__", _safe_json_for_script(DEFAULT_COLOR))
     return html
 
 

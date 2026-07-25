@@ -25,7 +25,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from method1.graph_builder.render_graph import TYPE_COLORS, _annotate_nodes
+from method1.graph_builder.render_graph import TYPE_COLORS, _annotate_nodes, _safe_json_for_script
+from method2.attack_payloads.payloads import ALL_PAYLOAD_TYPES
 
 # ---------------------------------------------------------------------------
 # Branding -- change here, nowhere else. Placeholder name per user request;
@@ -36,29 +37,75 @@ TAGLINE = "Prove it, don't guess it"
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
 
-ATTACK_TYPE_LABELS = {
-    "direct_injection": "Direct injection",
-    "indirect_injection": "Indirect injection",
-    "tool_poisoning": "Tool poisoning",
-    "dns_exfil_injection": "DNS exfil injection",
-    "file_exfil_injection": "File exfil injection",
-    "exec_exfil_injection": "Exec exfil injection",
-    "package_install_injection": "Package install injection",
-    "tool_abuse_injection": "Tool abuse injection",
-    "unknown": "Unknown",
-}
-CHANNEL_LABELS = {
-    "HTTP_WEBHOOK": "HTTP webhook",
-    "DNS_TUNNEL": "DNS tunnel",
-    "FILE_WRITE": "File write",
-    "SHELL_EXEC": "Shell exec",
-    "PACKAGE_INSTALL": "Package install",
-    "TOOL_ABUSE": "Tool abuse",
-}
+# Words a naive "snake_case -> Title Case" transform would get wrong
+# (e.g. "dns" -> "Dns" instead of "DNS"). Extend as new acronyms show up.
+_ACRONYM_WORDS = {"dns", "http"}
+
+
+def _prettify_snake_case(s: str) -> str:
+    words = s.lower().split("_")
+    parts = []
+    for i, w in enumerate(words):
+        if w in _ACRONYM_WORDS:
+            parts.append(w.upper())
+        elif i == 0:
+            parts.append(w.capitalize())
+        else:
+            parts.append(w)
+    return " ".join(parts)
+
+
+# Derived directly from method2/attack_payloads/payloads.py's own registry --
+# the single source of truth for which attack types and exfiltration
+# channels actually exist -- instead of a second, independently-maintained
+# list that could silently drift out of sync if a new attack type is ever
+# added there. Payload factory functions are pure (just build and return a
+# dict), so calling each with a dummy key here to inspect its exfil_channel
+# has no side effects.
+ATTACK_TYPE_LABELS = {key: _prettify_snake_case(key) for key in ALL_PAYLOAD_TYPES}
+ATTACK_TYPE_LABELS["unknown"] = "Unknown"
+
+CHANNEL_LABELS = {}
+for _attack_type, _payload_fn in ALL_PAYLOAD_TYPES.items():
+    _channel = _payload_fn("DUMMY_KEY").get("exfil_channel")
+    if _channel and _channel not in CHANNEL_LABELS:
+        CHANNEL_LABELS[_channel] = _prettify_snake_case(_channel)
 
 
 def _esc(s) -> str:
+    """HTML-escape a value for safe embedding as element text or an
+    attribute value (handles None gracefully by treating it as empty)."""
     return html.escape(str(s if s is not None else ""))
+
+
+def _load_json_or_exit(path: Path) -> dict:
+    """Load and parse a JSON file. Exits with a clean, actionable message
+    (never a raw traceback) if the file contains invalid JSON -- e.g. left
+    truncated by a process that was killed mid-write."""
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        print(f"[dashboard] ERROR: {path} contains invalid JSON ({e}).")
+        print(f"[dashboard] It may be corrupted or from an interrupted run -- "
+              f"re-run the step that produces it.")
+        sys.exit(1)
+
+
+def _warn_if_stale(reference_path: Path, dependent_path: Path, dependent_label: str, tool_hint: str):
+    """Warn (don't fail) if `dependent_path` is older than `reference_path`.
+    machine_report.json/verdict.json/ai_remediation.md carry no run-id or
+    cross-reference to each other, so an older file here most likely means
+    it's from a PREVIOUS, unrelated scan -- e.g. scan config A, attack
+    (verdict.json for A), re-scan config B (new machine_report.json),
+    forget to re-run attack. Without this check that would silently render
+    as one coherent audit of B when the attack evidence is actually A's."""
+    try:
+        if dependent_path.stat().st_mtime < reference_path.stat().st_mtime:
+            print(f"[dashboard] WARNING: {dependent_label} ({dependent_path}) is OLDER than "
+                  f"{reference_path.name} -- it may be from a previous scan run and not "
+                  f"correspond to the findings in this report. Consider re-running '{tool_hint}'.")
+    except OSError:
+        pass  # can't stat either file -- not worth failing the whole render over
 
 
 def _prettify_rule_name(rule: str) -> str:
@@ -67,6 +114,8 @@ def _prettify_rule_name(rule: str) -> str:
 
 
 def _highest_severity(failed_rules: list) -> str:
+    """Return the most severe severity level present across all failed
+    rules (critical > high > medium > low > info), or "info" if none."""
     present = {f.get("severity") for f in failed_rules}
     for sev in SEVERITY_ORDER:
         if sev in present:
@@ -75,6 +124,8 @@ def _highest_severity(failed_rules: list) -> str:
 
 
 def _risk_badge_html(highest_sev: str, has_findings: bool) -> str:
+    """Render the top-of-page overall risk pill, e.g. "Critical exposure",
+    or a neutral "No findings" badge when the scan had zero failures."""
     if not has_findings:
         return '<span class="risk-badge risk-low">No findings</span>'
     label = f"{highest_sev.capitalize()} exposure"
@@ -82,10 +133,15 @@ def _risk_badge_html(highest_sev: str, has_findings: bool) -> str:
 
 
 def _severity_badge_html(sev: str) -> str:
+    """Render a small colored severity pill (e.g. "CRITICAL") used on
+    both the findings list and the attack proof table."""
     return f'<span class="badge badge-{_esc(sev)}">{_esc(sev.upper())}</span>'
 
 
 def _render_stat_cards(failed_rules: list, verdict: dict) -> str:
+    """Render the 4 top-of-page summary cards: total findings, critical
+    count, high count, and credentials leaked (X/Y, or "N/A" without a
+    verdict.json)."""
     total = len(failed_rules)
     critical = sum(1 for f in failed_rules if f.get("severity") == "critical")
     high = sum(1 for f in failed_rules if f.get("severity") == "high")
@@ -120,6 +176,8 @@ def _render_stat_cards(failed_rules: list, verdict: dict) -> str:
 
 
 def _render_findings_list(failed_rules: list) -> str:
+    """Render the static findings section: one card per failed rule,
+    sorted most-severe first, each with an expandable "Fix" details box."""
     if not failed_rules:
         return '<p class="empty-state">No failed checks -- every static rule passed.</p>'
 
@@ -147,6 +205,9 @@ def _render_findings_list(failed_rules: list) -> str:
 
 
 def _render_attack_table(verdict: dict) -> str:
+    """Render the proven-attacks table: one row per tested credential,
+    with human-readable attack type/channel labels and a LEAKED/SAFE
+    status badge."""
     results = verdict.get("results", [])
     if not results:
         return '<p class="empty-state">No credentials were tested in this run.</p>'
@@ -187,12 +248,34 @@ def _render_attack_table(verdict: dict) -> str:
     """
 
 
+_GRAPH_MIN_HEIGHT_PX = 420
+_GRAPH_MAX_HEIGHT_PX = 700
+_GRAPH_HEIGHT_BASELINE_NODES = 12  # roughly the sample config's size -- no growth below this
+_GRAPH_HEIGHT_PER_NODE_PX = 12
+
+
+def _graph_height_px(node_count: int) -> int:
+    """Scale the graph panel's height modestly with node count so a much
+    larger config (more credentials/tools/skills) isn't as cramped, while
+    staying at the original fixed height for the common small case."""
+    if node_count <= _GRAPH_HEIGHT_BASELINE_NODES:
+        return _GRAPH_MIN_HEIGHT_PX
+    grown = _GRAPH_MIN_HEIGHT_PX + (node_count - _GRAPH_HEIGHT_BASELINE_NODES) * _GRAPH_HEIGHT_PER_NODE_PX
+    return min(_GRAPH_MAX_HEIGHT_PX, grown)
+
+
 def _render_graph_section(full_graph: dict, top_attack_targets: list) -> tuple:
     """Reuses render_graph.py's own node-annotation logic (blast_radius_score
     etc. merged onto each node) and categorical color palette, unchanged."""
     nodes = _annotate_nodes(full_graph, top_attack_targets)
-    data = {"nodes": nodes, "edges": full_graph["edges"]}
-    return json.dumps(data), json.dumps(TYPE_COLORS)
+    # .get() with a default, not full_graph["edges"] -- a malformed-but-present
+    # full_graph (has the key but is missing "edges") shouldn't crash the
+    # whole render when an empty graph is a perfectly renderable fallback,
+    # consistent with how render()'s own full_graph lookup already defaults
+    # to {"nodes": [], "edges": []} when the key is absent entirely.
+    data = {"nodes": nodes, "edges": full_graph.get("edges", [])}
+    height_px = _graph_height_px(len(nodes))
+    return _safe_json_for_script(data), _safe_json_for_script(TYPE_COLORS), height_px
 
 
 BRAND_ICON_SVG = """<svg class="brand-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5.25 3.4 9.74 8 11 4.6-1.26 8-5.75 8-11V5l-8-3z"/><path d="m9 12 2 2 4-4"/></svg>"""
@@ -204,6 +287,7 @@ PAGE_TEMPLATE = """<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__PRODUCT_NAME__ // Audit Report</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -331,7 +415,8 @@ PAGE_TEMPLATE = """<!doctype html>
   /* ---------- Graph ---------- */
   #chart-wrap {
     position: relative;
-    height: 420px;
+    /* height set inline per-page -- scales modestly with node count, see
+       _graph_height_px() in render_dashboard.py */
     background: var(--card-bg-alt);
     border: 1px solid var(--card-border);
     border-radius: 8px;
@@ -460,7 +545,7 @@ PAGE_TEMPLATE = """<!doctype html>
 
   <section class="panel">
     <h2 class="panel-title">Blast radius &mdash; agent and everything it can reach</h2>
-    <div id="chart-wrap">
+    <div id="chart-wrap" style="height: __GRAPH_HEIGHT_PX__px;">
       <div id="legend"></div>
       <div id="tooltip"></div>
       <svg id="graph-svg"></svg>
@@ -623,7 +708,7 @@ def render(machine_report: dict, verdict: dict = None, ai_remediation_md: str = 
 
     stat_cards_html = _render_stat_cards(failed_rules, verdict)
     findings_html = _render_findings_list(failed_rules)
-    graph_data_json, type_colors_json = _render_graph_section(full_graph, top_attack_targets)
+    graph_data_json, type_colors_json, graph_height_px = _render_graph_section(full_graph, top_attack_targets)
 
     if verdict:
         attack_section = f"""
@@ -645,7 +730,7 @@ def render(machine_report: dict, verdict: dict = None, ai_remediation_md: str = 
         """
         ai_markdown_script = (
             f"document.getElementById('ai-remediation-content').innerHTML = "
-            f"marked.parse({json.dumps(ai_remediation_md)});"
+            f"marked.parse({_safe_json_for_script(ai_remediation_md)});"
         )
     else:
         ai_section = ""
@@ -661,6 +746,7 @@ def render(machine_report: dict, verdict: dict = None, ai_remediation_md: str = 
     out = out.replace("__FINDINGS_LIST__", findings_html)
     out = out.replace("__ATTACK_SECTION__", attack_section)
     out = out.replace("__AI_SECTION__", ai_section)
+    out = out.replace("__GRAPH_HEIGHT_PX__", str(graph_height_px))
     out = out.replace("__GRAPH_DATA_JSON__", graph_data_json)
     out = out.replace("__TYPE_COLORS_JSON__", type_colors_json)
     out = out.replace("__AI_MARKDOWN_SCRIPT__", ai_markdown_script)
@@ -679,7 +765,7 @@ if __name__ == "__main__":
         print(f"[dashboard] ERROR: {machine_report_path} not found.")
         print("[dashboard] Run 'python3 run_pipeline.py scan <config_dir>' first.")
         sys.exit(1)
-    machine_report = json.loads(machine_report_path.read_text())
+    machine_report = _load_json_or_exit(machine_report_path)
 
     # machine_report.json itself never carries source_path (report_renderer.py's
     # build_machine_report() doesn't include it) -- it lives in the sibling
@@ -688,7 +774,7 @@ if __name__ == "__main__":
     source_path = None
     normalized_config_path = output_dir / "normalized_config.json"
     if normalized_config_path.exists():
-        normalized_config = json.loads(normalized_config_path.read_text())
+        normalized_config = _load_json_or_exit(normalized_config_path)
         source_path = normalized_config.get("source_path")
         # collector.py stores the resolved absolute path; display it relative
         # to the project root when possible (purely cosmetic -- same real
@@ -704,8 +790,9 @@ if __name__ == "__main__":
     verdict = None
     verdict_path = output_dir / "verdict.json"
     if verdict_path.exists():
-        verdict = json.loads(verdict_path.read_text())
+        verdict = _load_json_or_exit(verdict_path)
         print(f"[dashboard] including proven-attack data from {verdict_path}")
+        _warn_if_stale(machine_report_path, verdict_path, "verdict.json", "run_pipeline.py attack")
     else:
         print(f"[dashboard] no verdict.json found -- skipping the proven-attacks section.")
 
@@ -714,6 +801,7 @@ if __name__ == "__main__":
     if ai_path.exists():
         ai_remediation_md = ai_path.read_text()
         print(f"[dashboard] including AI remediation advice from {ai_path}")
+        _warn_if_stale(machine_report_path, ai_path, "ai_remediation.md", "run_pipeline.py advise")
     else:
         print(f"[dashboard] no ai_remediation.md found -- skipping the AI remediation section.")
 
