@@ -29,7 +29,7 @@ def stop_container():
 def clear_folder(folder: Path):
     if folder.exists():
         for f in folder.glob("*"):
-            if f.is_file():
+            if f.is_file() and f.name != ".gitkeep":
                 f.unlink()
         print(f"[reset] cleared {folder}")
 

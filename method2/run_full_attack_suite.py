@@ -159,15 +159,20 @@ def run_volume_audit():
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print(f"Usage: {PYTHON} run_full_attack_suite.py /path/to/machine_report.json")
+        print(f"Usage: {PYTHON} run_full_attack_suite.py /path/to/report.json")
         sys.exit(1)
 
-    with open(sys.argv[1], "r") as f:
+    report_path = Path(sys.argv[1]).resolve()
+    if not report_path.exists():
+        print(f"[orchestrator] ERROR: report file not found at {report_path}")
+        sys.exit(1)
+
+    with open(report_path, "r", encoding="utf-8") as f:
         machine_report = json.load(f)
 
     targets = get_credential_targets(machine_report, max_targets=len(ATTACK_TYPES))
     if not targets:
-        print("[orchestrator] no credential targets found in machine_report.json")
+        print("[orchestrator] no credential targets found in report")
         sys.exit(1)
 
     # Pair each attack type with a credential target, cycling targets if needed
@@ -179,16 +184,14 @@ if __name__ == "__main__":
     print(f"[orchestrator] Method 1 identified these top targets: {targets}")
     print(f"[orchestrator] running {len(pairings)} attack(s) across all 6 exfiltration channels\n")
 
-    report_path = Path(sys.argv[1]).resolve()
     output_dir = report_path.parent
+    config_data_path = report_path
 
-    normalized_config_path = output_dir / "normalized_config.json"
-    if not normalized_config_path.exists():
-        normalized_config_path = PROJECT_ROOT / "output" / "normalized_config.json"
-
-    if not normalized_config_path.exists():
-        print(f"[orchestrator] ERROR: normalized config not found at {normalized_config_path}")
-        sys.exit(1)
+    # Fallback to normalized_config.json if report_path doesn't have credentials field
+    if "credentials" not in machine_report:
+        alt_path = output_dir / "normalized_config.json"
+        if alt_path.exists():
+            config_data_path = alt_path
 
     canaries_path = str(CANARIES_PATH)
 
@@ -200,7 +203,7 @@ if __name__ == "__main__":
     run([PYTHON, str(RESET_SCRIPT)], "resetting test environment")
 
     # Step 2: Seed fresh canaries
-    run([PYTHON, str(CANARY_SEEDER_SCRIPT), str(normalized_config_path)],
+    run([PYTHON, str(CANARY_SEEDER_SCRIPT), str(config_data_path)],
         "seeding fresh canaries")
 
     # Step 3: Check Docker availability and build container
@@ -212,7 +215,7 @@ if __name__ == "__main__":
         print("[orchestrator] Container replica execution skipped.")
         print("[orchestrator] Interceptors, payload delivery, and dry-run simulation are fully operational!\n")
     else:
-        run([PYTHON, str(BUILD_REPLICA_SCRIPT), str(normalized_config_path), canaries_path],
+        run([PYTHON, str(BUILD_REPLICA_SCRIPT), str(config_data_path), canaries_path],
             "building and starting sandbox replica", fatal=True)
 
     # Step 4: Start all interceptors
@@ -244,16 +247,8 @@ if __name__ == "__main__":
         run(["docker", "restart", "agent-sandbox-instance"],
             "restarting container so tool_poisoning/tool_abuse payloads are picked up at startup",
             fatal=True)
-        # `docker restart` itself took ~10s in local testing (stop + start +
-        # fake_agent.py reinitializing), which was previously eating into
-        # the same EXFILTRATION_WINDOW budget used for normal processing --
-        # a real design smell even though it didn't reproduce a failure in
-        # repeated testing after the dedup-persistence fix (see fake_agent.py
-        # DEDUP_STATE_PATH) removed most of the restart-induced noise that
-        # made this flaky before. This explicit settle buffer keeps restart
-        # recovery from silently competing with the window below.
-        print(f"[orchestrator] waiting {RESTART_SETTLE_TIME}s for the "
-              f"restarted container to finish reinitializing...")
+        # Settle buffer allowing the container to finish reinitializing after restart
+        print(f"[orchestrator] waiting {RESTART_SETTLE_TIME}s for container initialization...")
         time.sleep(RESTART_SETTLE_TIME)
 
     print(f"\n[orchestrator] all {len(pairings)} attacks delivered.")

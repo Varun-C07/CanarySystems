@@ -90,24 +90,26 @@ def build_human_report(findings: list, graph_output: dict) -> str:
 
 
 if __name__ == "__main__":
+    from pathlib import Path
     if len(sys.argv) != 3:
         print("Usage: python report_renderer.py /path/to/findings.json /path/to/graph_output.json")
         sys.exit(1)
 
-    with open(sys.argv[1], "r") as f:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
         findings = json.load(f)
 
-    with open(sys.argv[2], "r") as f:
+    with open(sys.argv[2], "r", encoding="utf-8") as f:
         graph_output = json.load(f)
 
     machine_report = build_machine_report(findings, graph_output)
     human_report = build_human_report(findings, graph_output)
 
-    with open("machine_report.json", "w") as f:
+    output_dir = Path(__file__).parent.parent.parent / "output"
+    output_dir.mkdir(exist_ok=True)
+    report_path = output_dir / "report.json"
+
+    with open(report_path, "w", encoding="utf-8") as f:
         json.dump(machine_report, f, indent=2)
 
-    with open("human_report.txt", "w") as f:
-        f.write(human_report)
-
     print(human_report)
-    print("\n[Saved machine_report.json and human_report.txt]")
+    print(f"\n[Saved report to {report_path}]")

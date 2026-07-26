@@ -45,12 +45,12 @@ def prepare_runtime_config(normalized_config: dict, canaries: dict):
         canary_value = canaries.get(key, {}).get("value", f"CANARY_MISSING_{key}")
         env_lines.append(f"{key}={canary_value}")
 
-    with open(CONFIG_MOUNT_DIR / ".env", "w") as f:
+    with open(CONFIG_MOUNT_DIR / ".env", "w", encoding="utf-8") as f:
         f.write("\n".join(env_lines) + "\n")
 
     # Copy mcp_servers.json through as-is (scopes/structure matter, not secrets)
     mcp_servers = normalized_config.get("mcp_servers", [])
-    with open(CONFIG_MOUNT_DIR / "mcp_servers.json", "w") as f:
+    with open(CONFIG_MOUNT_DIR / "mcp_servers.json", "w", encoding="utf-8") as f:
         json.dump({"servers": mcp_servers}, f, indent=2)
 
     print(f"[replica_builder] wrote runtime config with {len(env_lines)} canary credential(s)")
@@ -60,7 +60,7 @@ def build_image():
     print("[replica_builder] building Docker image...")
     result = subprocess.run(
         ["docker", "build", "-t", IMAGE_NAME, str(REPLICA_DIR)],
-        capture_output=True, text=True
+        capture_output=True, text=True, encoding="utf-8", errors="replace"
     )
     if result.returncode != 0:
         print("[replica_builder] BUILD FAILED")
@@ -75,27 +75,25 @@ def run_container():
 
     print("[replica_builder] starting container...")
 
+    # Convert paths to POSIX format for Docker volume mounts (cross-platform)
+    cfg_posix = CONFIG_MOUNT_DIR.resolve().as_posix()
+    wat_posix = WATCHED_MOUNT_DIR.resolve().as_posix()
+    inb_posix = CHAT_INBOX_MOUNT_DIR.resolve().as_posix()
+    out_posix = OUTPUT_MOUNT_DIR.resolve().as_posix()
+
     result = subprocess.run(
         [
             "docker", "run", "-d",
             "--name", CONTAINER_NAME,
             # Volume mounts for all 4 directories
-            "-v", f"{CONFIG_MOUNT_DIR}:/agent/config",
-            "-v", f"{WATCHED_MOUNT_DIR}:/agent/watched",
-            "-v", f"{CHAT_INBOX_MOUNT_DIR}:/agent/chat_inbox",
-            "-v", f"{OUTPUT_MOUNT_DIR}:/agent/output",
-            # Ensure host.docker.internal reliably resolves inside the container
-            # (auto-provided on Docker Desktop, but not guaranteed on Linux).
-            # NOTE: this does NOT redirect real DNS traffic to the Pillar B
-            # sinkhole -- standard resolvers always use port 53, and the
-            # sinkhole deliberately listens on 5353 to avoid requiring root.
-            # fake_agent.py's DNS exfil channel instead sends its query
-            # directly to host.docker.internal:5353, bypassing OS-level
-            # DNS resolution entirely. See dns_sinkhole.py.
+            "-v", f"{cfg_posix}:/agent/config",
+            "-v", f"{wat_posix}:/agent/watched",
+            "-v", f"{inb_posix}:/agent/chat_inbox",
+            "-v", f"{out_posix}:/agent/output",
             "--add-host=host.docker.internal:host-gateway",
             IMAGE_NAME,
         ],
-        capture_output=True, text=True
+        capture_output=True, text=True, encoding="utf-8", errors="replace"
     )
     if result.returncode != 0:
         print("[replica_builder] RUN FAILED")
@@ -103,21 +101,21 @@ def run_container():
         sys.exit(1)
     print(f"[replica_builder] container running as '{CONTAINER_NAME}'")
     print(f"[replica_builder] volume mounts:")
-    print(f"  config:     {CONFIG_MOUNT_DIR} -> /agent/config")
-    print(f"  watched:    {WATCHED_MOUNT_DIR} -> /agent/watched")
-    print(f"  chat_inbox: {CHAT_INBOX_MOUNT_DIR} -> /agent/chat_inbox")
-    print(f"  output:     {OUTPUT_MOUNT_DIR} -> /agent/output")
+    print(f"  config:     {cfg_posix} -> /agent/config")
+    print(f"  watched:    {wat_posix} -> /agent/watched")
+    print(f"  chat_inbox: {inb_posix} -> /agent/chat_inbox")
+    print(f"  output:     {out_posix} -> /agent/output")
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python build_replica.py /path/to/normalized_config.json /path/to/canaries.json")
+        print("Usage: python build_replica.py /path/to/report.json /path/to/canaries.json")
         sys.exit(1)
 
-    with open(sys.argv[1], "r") as f:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
         normalized_config = json.load(f)
 
-    with open(sys.argv[2], "r") as f:
+    with open(sys.argv[2], "r", encoding="utf-8") as f:
         canaries = json.load(f)
 
     prepare_runtime_config(normalized_config, canaries)

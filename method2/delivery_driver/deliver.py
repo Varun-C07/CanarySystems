@@ -38,7 +38,7 @@ def deliver_to_chat_inbox(payload: dict):
     """Deliver payload as a direct chat message file."""
     CHAT_INBOX_DIR.mkdir(exist_ok=True)
     filepath = CHAT_INBOX_DIR / payload["filename"]
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         f.write(payload["content"])
     print(f"[delivery_driver] delivered {payload['type']} to chat_inbox: {filepath}")
 
@@ -47,7 +47,7 @@ def deliver_to_watched_file(payload: dict):
     """Deliver payload as a document in the agent's watched folder."""
     WATCHED_DIR.mkdir(exist_ok=True)
     filepath = WATCHED_DIR / payload["filename"]
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         f.write(payload["content"])
     print(f"[delivery_driver] delivered {payload['type']} to watched folder: {filepath}")
 
@@ -57,7 +57,7 @@ def deliver_to_tool_description(payload: dict):
     CONFIG_DIR.mkdir(exist_ok=True)
     mcp_path = CONFIG_DIR / "mcp_servers.json"
     if mcp_path.exists():
-        with open(mcp_path, "r") as f:
+        with open(mcp_path, "r", encoding="utf-8") as f:
             data = json.load(f)
     else:
         data = {"servers": []}
@@ -69,7 +69,7 @@ def deliver_to_tool_description(payload: dict):
         "description": payload["content"],
     })
 
-    with open(mcp_path, "w") as f:
+    with open(mcp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
     print(f"[delivery_driver] delivered {payload['type']}: added poisoned tool "

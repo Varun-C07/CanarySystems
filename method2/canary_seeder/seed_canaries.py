@@ -32,20 +32,8 @@ def generate_run_id() -> str:
 
 
 def generate_canary_value(key: str, run_id: str) -> tuple:
-    """
-    Produces a fake-but-realistic-looking value for a given credential key,
-    with the run_id embedded so it's traceable back to this exact test run.
-
-    Returns (value, embedded_tag). embedded_tag is the EXACT substring
-    actually embedded in `value` for this credential -- not necessarily
-    the full "CANARY_{run_id}" tag, since some formats truncate it to fit
-    a real-world constraint (e.g. AWS Access Key IDs are always AKIA +
-    16 chars, so the tag gets cut short to fit). Callers must store this
-    returned tag, not a separately-computed generic one, or downstream
-    substring matching (aggregate_verdict.py: `canary_tag in
-    extracted_value`) silently fails for whichever credential's tag got
-    truncated on the way into its value.
-    """
+    """Generates a tagged canary credential value for tracking.
+    Returns (value, embedded_tag)."""
     full_tag = f"CANARY_{run_id}"
 
     if "STRIPE" in key.upper():
@@ -83,14 +71,14 @@ if __name__ == "__main__":
         print("Usage: python seed_canaries.py /path/to/normalized_config.json")
         sys.exit(1)
 
-    with open(sys.argv[1], "r") as f:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
         normalized_config = json.load(f)
 
     run_id = generate_run_id()
     canaries = build_canaries(normalized_config, run_id)
 
     output_path = SCRIPT_DIR / "canaries.json"
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(canaries, f, indent=2)
 
     print(f"[canary_seeder] run_id: {run_id}")

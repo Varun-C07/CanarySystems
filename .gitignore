@@ -28,3 +28,4 @@ method2/replica_builder/runtime_output/*
 .DS_Store
 Thumbs.db
 .consent_given
+.env

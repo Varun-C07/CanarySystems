@@ -35,21 +35,20 @@ Takes Method 1's highest-ranked targets and proves exploitability in a controlle
 - Docker Desktop (required only for Method 2 dynamic attack execution)
 
 ### 1. Run Method 1 (Static Scan)
-Scans the target configuration directory and outputs all artifacts into `output/`:
+Scans the target configuration directory and outputs results into `output/`:
 ```bash
 python3 run_pipeline.py scan sample_configs/openclaw_default
 ```
 **Artifacts Generated (`output/`):**
-- `machine_report.json`: Structured target list for Method 2.
-- `human_report.txt`: Plain-English security audit summary & fixes.
-- `graph_visualization.html`: Interactive force-directed blast radius map. Open this file in your browser to inspect risk nodes!
+- `report.json`: Structured target list and blast radius model for Method 2.
+- `dashboard.html`: Self-contained interactive visual dashboard. Open this file in your browser to inspect risk nodes and recommendations!
 
 ---
 
 ### 2. Run Dry-Run Simulation (No Docker Required)
 Preview attack payloads and generated canary values without touching container runtimes:
 ```bash
-python3 method2/safety_wrapper.py output/machine_report.json --dry-run
+python3 method2/safety_wrapper.py output/report.json --dry-run
 ```
 
 ---
@@ -57,13 +56,20 @@ python3 method2/safety_wrapper.py output/machine_report.json --dry-run
 ### 3. Run Method 2 (Dynamic Attack Test)
 Runs full containerized canary injection testing:
 ```bash
-python3 run_pipeline.py attack output/machine_report.json
+python3 run_pipeline.py attack output/report.json
 ```
 *(Or run both Method 1 and Method 2 end-to-end with one command: `python3 run_pipeline.py full sample_configs/openclaw_default`)*
 
 ---
 
-### 4. Emergency Kill Switch / Cleanup
+### 4. Generate AI Remediation Advice
+```bash
+python3 run_pipeline.py advise
+```
+
+---
+
+### 5. Emergency Kill Switch / Cleanup
 To immediately halt tests and destroy sandbox containers:
 ```bash
 python3 run_pipeline.py kill

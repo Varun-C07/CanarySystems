@@ -16,6 +16,8 @@ Logs every hit to canary_hits.json in this same directory.
 """
 
 import json
+import os
+import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -24,19 +26,27 @@ SCRIPT_DIR = Path(__file__).parent
 HITS_LOG_PATH = SCRIPT_DIR / "canary_hits.json"
 PORT = 9000
 
+_listener_lock = threading.Lock()
+
 
 def load_hits():
     if HITS_LOG_PATH.exists():
-        with open(HITS_LOG_PATH, "r") as f:
-            return json.load(f)
+        try:
+            with open(HITS_LOG_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return []
     return []
 
 
 def save_hit(hit: dict):
-    hits = load_hits()
-    hits.append(hit)
-    with open(HITS_LOG_PATH, "w") as f:
-        json.dump(hits, f, indent=2)
+    with _listener_lock:
+        hits = load_hits()
+        hits.append(hit)
+        tmp_path = HITS_LOG_PATH.parent / f"{HITS_LOG_PATH.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(hits, f, indent=2)
+        os.replace(tmp_path, HITS_LOG_PATH)
 
 
 class CanaryListenerHandler(BaseHTTPRequestHandler):

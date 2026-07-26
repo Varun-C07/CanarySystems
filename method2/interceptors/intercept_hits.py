@@ -102,31 +102,17 @@ def log_intercept_hit(
         lock_file = open(lock_path, "a")
         try:
             if _HAVE_FCNTL:
-                # Cross-PROCESS mutual exclusion. The in-process _write_lock
-                # above only protects threads within one interpreter -- each
-                # of the three interceptor pillars can also be launched as
-                # its own standalone `python x.py` process (see each
-                # module's own "Usage (standalone for testing)" docstring),
-                # and without this, two separate processes racing on the
-                # same read-modify-write cycle can silently drop a hit, or
-                # (worse, empirically reproduced) collide on a shared temp
-                # filename and crash with FileNotFoundError. flock() blocks
-                # here until any other process's lock is released.
+                # File-level locking for multi-process coordination
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
 
             hits = load_intercept_hits()
             hits.append(hit)
-            # Atomic write: write to a temp file UNIQUE to this process+thread
-            # (so concurrent writers never share/collide on the same temp
-            # path even outside the lock window), then rename over the
-            # target. os.replace() is atomic on POSIX and Windows, so a
-            # process killed mid-write leaves either the old complete file
-            # or the new complete file -- never a truncated one.
+            # Atomic write to process-unique temp file before replace
             tmp_path = INTERCEPT_HITS_PATH.parent / (
                 f"{INTERCEPT_HITS_PATH.name}.{os.getpid()}."
                 f"{threading.get_ident()}.tmp"
             )
-            with open(tmp_path, "w") as f:
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(hits, f, indent=2)
             os.replace(tmp_path, INTERCEPT_HITS_PATH)
         finally:

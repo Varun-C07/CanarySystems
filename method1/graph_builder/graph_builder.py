@@ -216,7 +216,7 @@ if __name__ == "__main__":
         print("Usage: python graph_builder.py /path/to/normalized_config.json")
         sys.exit(1)
 
-    with open(sys.argv[1], "r") as f:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
         config = json.load(f)
 
     graph = build_graph(config)

@@ -41,7 +41,7 @@ if __name__ == "__main__":
         print("Usage: python engine.py /path/to/config_collector_output.json")
         sys.exit(1)
 
-    with open(sys.argv[1], "r") as f:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
         config = json.load(f)
 
     findings = run_rules(config)

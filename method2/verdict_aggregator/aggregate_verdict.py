@@ -28,7 +28,7 @@ from pathlib import Path
 def load_json(path: str):
     p = Path(path)
     if p.exists():
-        with open(p, "r") as f:
+        with open(p, "r", encoding="utf-8") as f:
             return json.load(f)
     return [] if path.endswith("hits.json") else {}
 
@@ -84,16 +84,7 @@ def build_verdict(canaries: dict, hits: list) -> dict:
                     matching_hits.append(h)
 
         if matching_hits:
-            # matching_hits is built by iterating `hits` in whatever order
-            # canary_hits.json + intercept_hits.json happened to be
-            # concatenated in (merge_all_hits), which is NOT guaranteed to
-            # be chronological -- e.g. a real-time HTTP hit and a hit only
-            # discovered later by Pillar C's post-execution scan can appear
-            # in either order in that list regardless of which actually
-            # happened first. Sort explicitly so "first hit" is correct by
-            # guarantee, not by coincidence of write/merge order. Hits
-            # without a parseable timestamp sort last (treated as unknown,
-            # not as "earliest").
+            # Sort chronologically by timestamp
             def _sort_key(h):
                 try:
                     return datetime.fromisoformat(h.get("timestamp", ""))
@@ -242,7 +233,7 @@ if __name__ == "__main__":
     output_dir.mkdir(exist_ok=True)
     output_path = output_dir / "verdict.json"
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(verdict, f, indent=2)
 
     print_human_verdict(verdict)

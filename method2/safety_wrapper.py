@@ -61,11 +61,22 @@ def dry_run(machine_report_path: str):
 No systems will be touched. This shows what WOULD happen in a live run.
 """)
 
+def dry_run(machine_report_path: str):
+    """In dry-run mode, generate and display the attack plan without
+    touching any system. Shows which targets would be attacked, with
+    which payload types, and what canary values would be generated."""
+    print("=" * 60)
+    print("DRY RUN MODE")
+    print("=" * 60)
+    print("""
+No systems will be touched. This shows what WOULD happen in a live run.
+""")
+
     try:
-        with open(machine_report_path, "r") as f:
+        with open(machine_report_path, "r", encoding="utf-8") as f:
             machine_report = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"[safety] could not load machine report: {e}")
+        print(f"[safety] could not load report: {e}")
         return
 
     # Show what Method 1 found
@@ -77,18 +88,25 @@ No systems will be touched. This shows what WOULD happen in a live run.
 
     # Show attack targets
     top_targets = machine_report.get("top_attack_targets", [])
-    credential_targets = [t for t in top_targets if t["type"] == "credential"][:3]
+    credential_targets = [t for t in top_targets if t["type"] == "credential"]
 
     if not credential_targets:
         print("[safety] no credential targets found - nothing to attack.")
         return
 
-    attack_types = ["direct_injection", "indirect_injection", "tool_poisoning"]
-    pairings = list(zip(attack_types, [t["label"] for t in credential_targets]))
+    PROJECT_ROOT = METHOD2_DIR.parent
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
 
-    print("Attack plan:")
-    for attack_type, target in pairings:
-        print(f"  {attack_type} -> {target} (score: {credential_targets[0]['blast_radius_score']})")
+    from method2.run_full_attack_suite import ATTACK_TYPES
+    pairings = []
+    for i, attack_type in enumerate(ATTACK_TYPES):
+        target = credential_targets[i % len(credential_targets)]
+        pairings.append((attack_type, target["label"], target["blast_radius_score"]))
+
+    print(f"Attack plan ({len(pairings)} attack(s) across all 6 exfiltration channels):")
+    for attack_type, target_label, score in pairings:
+        print(f"  {attack_type:28s} -> {target_label:22s} (blast score: {score})")
     print()
 
     # Show what canary values would look like
@@ -98,7 +116,7 @@ No systems will be touched. This shows what WOULD happen in a live run.
     for target in credential_targets:
         key = target["label"]
         example, _tag = generate_canary_value(key, "DRYRUN_example123")
-        print(f"  {key} -> {example}")
+        print(f"  {key:25s} -> {example}")
     print()
 
     print("[safety] dry run complete - no systems were touched.")
@@ -110,7 +128,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if len(sys.argv) < 2:
-        print(f"Usage: {PYTHON} safety_wrapper.py /path/to/machine_report.json [--dry-run]")
+        print(f"Usage: {PYTHON} safety_wrapper.py /path/to/report.json [--dry-run]")
         print(f"       {PYTHON} safety_wrapper.py --kill")
         sys.exit(1)
 

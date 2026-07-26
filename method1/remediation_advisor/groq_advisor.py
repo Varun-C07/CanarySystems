@@ -1,23 +1,13 @@
 """
 groq_advisor.py
 
-Takes Method 1's machine_report.json (failed_rules, top_attack_targets) and,
-if available, Method 2's verdict.json (which credentials were actually
-proven to leak, via which attack type and exfiltration channel), and calls
-the Groq API to generate contextual, AI-written remediation advice -- not
-just restating each rule's hardcoded fix text, but explaining why the
-specific combination of issues found was exploitable together, and
-prioritizing proven exploitation over theoretical risk.
+Generates contextual remediation advice for security findings using LLM reasoning.
+Combines static scanner findings and dynamic attack evidence into prioritized,
+beginner-friendly remediation guidance.
 
-Requires GROQ_API_KEY in the environment (never hardcoded). Get a free key
-at https://console.groq.com/keys.
-
+Requires GROQ_API_KEY environment variable.
 Usage:
-    python groq_advisor.py /path/to/machine_report.json [/path/to/verdict.json]
-
-Output:
-    Prints the advice to stdout and saves it to output/ai_remediation.md
-    (relative to the project root).
+    python groq_advisor.py /path/to/report.json [/path/to/verdict.json]
 """
 
 import json
@@ -28,59 +18,35 @@ import urllib.request
 from pathlib import Path
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-
-# llama-3.3-70b-versatile was the obvious default here, but Groq deprecated
-# it (shutdown 2026-08-16) and its own docs recommend migrating to
-# openai/gpt-oss-120b -- that's what we use. See:
-# https://console.groq.com/docs/deprecations
-# Overridable via GROQ_MODEL env var so a future deprecation (there will be
-# one) doesn't require a code change to work around.
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
-
 REQUEST_TIMEOUT = 60
+USER_AGENT = "agent-security-auditor-advisor/1.0"
 
-# Bare urllib sends "Python-urllib/3.x" as its default User-Agent, which
-# Cloudflare's bot-protection rules in front of api.groq.com commonly block
-# outright (HTTP 403, Cloudflare error 1010) since it's a well-known
-# generic-scripting-tool signature. Self-identify honestly instead -- same
-# approach the official groq-python SDK takes (it sends "Groq/Python
-# <version>", not a spoofed browser string).
-USER_AGENT = "agent-security-auditor-groq-advisor/1.0"
-
-SYSTEM_PROMPT = """You are a senior application security engineer writing the remediation section of an AI agent security audit report.
+SYSTEM_PROMPT = """You are an application security advisor writing the remediation section of an AI agent security audit report. Your goal is to explain risks and fixes in plain, beginner-friendly English so that any developer can understand what is wrong and exactly how to fix it.
 
 You're given:
-1. Static findings from a configuration scanner (what's misconfigured).
-2. A blast-radius graph of assets reachable if the agent is compromised, ranked by (sensitivity x ease of reach).
-3. Optionally, PROVEN results from a dynamic penetration test that actually attempted to exfiltrate uniquely-tagged fake credentials through real attack techniques (prompt injection, tool poisoning, DNS tunneling, malicious package install, etc.) against a sandboxed replica of the agent.
+1. Static findings from a configuration scanner (misconfigurations).
+2. A blast-radius graph of assets reachable if the agent is compromised.
+3. Proven results from a dynamic penetration test (if dynamic evidence is present).
 
-STRICT RULE ON CONNECTING FINDINGS -- apply this before writing anything, and re-check every sentence against it before you finalize your answer:
-
-You may only state that a static finding relates to, enabled, or explains a specific dynamic attack type if BOTH of the following are literally true:
-  (a) That attack type appears as a literal key in that credential's attack_breakdown dict in the dynamic evidence given below, AND
-  (b) The static finding's own mechanism plausibly and directly produced that attack's leak_channel -- e.g. unsandboxed_exec (shell-exec has no sandbox) directly explains a SHELL_EXEC leak_channel; overbroad_scope (unrestricted filesystem write) directly explains a FILE_WRITE leak_channel; auth_token/network_binding (no auth, exposed network) directly explain ANY leak_channel, since every attack in this test requires reaching the API first.
-
-If a static finding and an attack type merely share a keyword, topic, or theme (e.g. both mention "installing", "packages", "credentials", "access") but neither (a) nor (b) holds, DO NOT connect them -- discuss them as separate, unrelated items instead. Do not soften an unsupported link into a hedge ("could relate to", "may have contributed to", "is consistent with") -- either the evidence supports the link under the test above, or you say nothing about a relationship at all.
-
-CONCRETE EXAMPLE OF A FORBIDDEN LINK: unpinned_provenance is a static finding about THIS AGENT'S OWN skills lacking version pins (a supply-chain trust issue in already-installed software). package_install_injection is a dynamic attack where the agent is tricked into running "pip install" on an attacker-suggested, entirely different package. Neither (a) nor (b) holds between them: package_install_injection is not what unpinned_provenance's own mechanism (unpinned skill versions) would produce, and whichever credential's attack_breakdown contains package_install_injection does not thereby implicate unpinned skills. Do not state or imply a relationship between these two findings, even in passing, even as a minor supporting point. If you find yourself about to write a sentence naming both, stop and rewrite it to discuss them separately.
-
-Write prioritized, contextual remediation advice in Markdown. Do not just restate each finding next to a generic fix -- when the STRICT RULE above is actually satisfied for two findings, explain WHY that specific combination makes the environment exploitable together. For example: "no auth token + binding to 0.0.0.0 + plaintext credentials means anyone on the local network can trivially read every secret with no authentication at all" (auth_token and network_binding each satisfy rule (b) for every leak_channel present) or "the unsandboxed shell-exec tool being reachable is what let exec_exfil_injection actually execute code" (unsandboxed_exec satisfies rule (b) for the SHELL_EXEC channel specifically).
-
-When dynamic test evidence is available, treat PROVEN exploitation as the highest priority and say so explicitly -- a finding that was actually demonstrated to leak a credential is more urgent than one that is only theoretically risky, even if the theoretical one has a higher static severity label.
+GUIDELINES:
+- Use plain, accessible language. Avoid dense jargon without explaining it.
+- When mentioning a technical concept (e.g., 0.0.0.0 binding, bearer token, unsandboxed execution, TLS), explain in one simple sentence what it means in practice.
+- Provide clear, step-by-step instructions on what configuration setting or file line to change.
+- Only connect a static finding to a dynamic attack type if the finding directly enabled that specific attack channel.
 
 Structure your response as:
-1. A short executive-summary paragraph on overall risk posture.
-2. A prioritized remediation list (most urgent first). Each item needs a one-line "why this matters here" tied to the SPECIFIC findings given, following the STRICT RULE above -- not generic security advice a template could produce, and never a connection the rule forbids.
-3. If any credentials were proven to leak, a section naming exactly which attack chains succeeded (using attack_breakdown's literal keys, nothing else) and the single highest-leverage change that would have blocked the most of them.
+1. **Executive Summary**: A brief 2-3 sentence overview explaining overall safety in plain terms.
+2. **Prioritized Remediation Guide**: A numbered list of recommended fixes (most critical first). For each item include:
+   - **What's wrong & why it matters** (in simple English).
+   - **How to fix it** (exact setting to change, e.g. "In `settings.json`, set `bind_address` to `127.0.0.1`").
+3. **Proven Attack Breakdown** (if dynamic test evidence is present): Name which credentials leaked, how they leaked, and the most impactful changes to block them immediately.
 
-Before finalizing, re-read every sentence that names both a static finding and a dynamic attack type together, and check it against the STRICT RULE above. If any sentence fails the check, rewrite it to discuss the two items separately.
-
-Be concise, specific, and actionable. Reference the actual credential names, tool names, and attack types given -- never use placeholders like "[credential name]"."""
+Be concise, clear, and actionable. Reference actual credential names, tool names, and filenames given."""
 
 
 class GroqAdvisorError(Exception):
-    """Raised for any Groq API failure that should be reported cleanly,
-    never as a raw traceback."""
+    """Raised for API errors."""
 
 
 def load_json(path: Path) -> dict:
@@ -88,7 +54,7 @@ def load_json(path: Path) -> dict:
     (never a raw traceback) if the file contains invalid JSON -- e.g. left
     truncated by a process that was killed mid-write."""
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except json.JSONDecodeError as e:
         print(f"[remediation_advisor] ERROR: {path} contains invalid JSON ({e}).")
@@ -283,7 +249,7 @@ def call_groq(prompt: str, api_key: str, model: str = GROQ_MODEL) -> str:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python groq_advisor.py /path/to/machine_report.json [/path/to/verdict.json]")
+        print("Usage: python groq_advisor.py /path/to/report.json [/path/to/verdict.json]")
         sys.exit(1)
 
     api_key = os.environ.get("GROQ_API_KEY")
@@ -328,13 +294,17 @@ def main():
     # string above already implies is supported.
     output_path = machine_report_path.parent / "ai_remediation.md"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(advice)
 
     print("\n" + "=" * 60)
     print("AI-GENERATED REMEDIATION ADVICE")
     print("=" * 60 + "\n")
-    print(advice)
+    try:
+        print(advice)
+    except UnicodeEncodeError:
+        sys.stdout.buffer.write(advice.encode("utf-8"))
+        sys.stdout.buffer.write(b"\n")
     print(f"\n[remediation_advisor] saved to {output_path}")
 
 
