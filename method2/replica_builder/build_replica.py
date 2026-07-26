@@ -31,8 +31,8 @@ CONTAINER_NAME = "agent-sandbox-instance"
 
 
 def prepare_runtime_config(normalized_config: dict, canaries: dict):
-    """Write a .env and mcp_servers.json into runtime_config/, with real
-    credential values replaced by canary values."""
+    """Write .env, mcp_servers.json, and canary_mappings.json into runtime_config/,
+    replacing real credentials with canaries across all storage types."""
     CONFIG_MOUNT_DIR.mkdir(exist_ok=True)
     WATCHED_MOUNT_DIR.mkdir(exist_ok=True)
     CHAT_INBOX_MOUNT_DIR.mkdir(exist_ok=True)
@@ -40,20 +40,34 @@ def prepare_runtime_config(normalized_config: dict, canaries: dict):
 
     # Build .env with canary values substituted in place of real ones
     env_lines = []
+    mappings = []
+
     for cred in normalized_config.get("credentials", []):
         key = cred["key"]
-        canary_value = canaries.get(key, {}).get("value", f"CANARY_MISSING_{key}")
+        canary_data = canaries.get(key, {})
+        canary_value = canary_data.get("value", f"CANARY_MISSING_{key}")
         env_lines.append(f"{key}={canary_value}")
+
+        mappings.append({
+            "key": key,
+            "canary_value": canary_value,
+            "source_file": cred.get("source_file", ".env"),
+            "storage": cred.get("storage", "plaintext_env"),
+            "pattern_name": cred.get("pattern_name"),
+        })
 
     with open(CONFIG_MOUNT_DIR / ".env", "w", encoding="utf-8") as f:
         f.write("\n".join(env_lines) + "\n")
+
+    with open(CONFIG_MOUNT_DIR / "canary_mappings.json", "w", encoding="utf-8") as f:
+        json.dump(mappings, f, indent=2)
 
     # Copy mcp_servers.json through as-is (scopes/structure matter, not secrets)
     mcp_servers = normalized_config.get("mcp_servers", [])
     with open(CONFIG_MOUNT_DIR / "mcp_servers.json", "w", encoding="utf-8") as f:
         json.dump({"servers": mcp_servers}, f, indent=2)
 
-    print(f"[replica_builder] wrote runtime config with {len(env_lines)} canary credential(s)")
+    print(f"[replica_builder] wrote runtime config with {len(env_lines)} canary credential(s) across all storage types")
 
 
 def build_image():
@@ -69,7 +83,7 @@ def build_image():
     print("[replica_builder] image built successfully")
 
 
-def run_container():
+def run_container(source_path: str = None):
     # Remove any previous instance
     subprocess.run(["docker", "rm", "-f", CONTAINER_NAME], capture_output=True)
 
@@ -81,20 +95,27 @@ def run_container():
     inb_posix = CHAT_INBOX_MOUNT_DIR.resolve().as_posix()
     out_posix = OUTPUT_MOUNT_DIR.resolve().as_posix()
 
-    result = subprocess.run(
-        [
-            "docker", "run", "-d",
-            "--name", CONTAINER_NAME,
-            # Volume mounts for all 4 directories
-            "-v", f"{cfg_posix}:/agent/config",
-            "-v", f"{wat_posix}:/agent/watched",
-            "-v", f"{inb_posix}:/agent/chat_inbox",
-            "-v", f"{out_posix}:/agent/output",
-            "--add-host=host.docker.internal:host-gateway",
-            IMAGE_NAME,
-        ],
-        capture_output=True, text=True, encoding="utf-8", errors="replace"
-    )
+    cmd = [
+        "docker", "run", "-d",
+        "--name", CONTAINER_NAME,
+        "-v", f"{cfg_posix}:/agent/config",
+        "-v", f"{wat_posix}:/agent/watched",
+        "-v", f"{inb_posix}:/agent/chat_inbox",
+        "-v", f"{out_posix}:/agent/output",
+    ]
+
+    # Mount real agent codebase into /agent/source READ-ONLY (:ro) for host safety
+    if source_path and Path(source_path).exists():
+        src_posix = Path(source_path).resolve().as_posix()
+        cmd.extend(["-v", f"{src_posix}:/agent/source:ro"])
+        print(f"[replica_builder] mounting target agent workspace (READ-ONLY): {src_posix} -> /agent/source:ro")
+
+    cmd.extend([
+        "--add-host=host.docker.internal:host-gateway",
+        IMAGE_NAME,
+    ])
+
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         print("[replica_builder] RUN FAILED")
         print(result.stderr)
@@ -118,6 +139,7 @@ if __name__ == "__main__":
     with open(sys.argv[2], "r", encoding="utf-8") as f:
         canaries = json.load(f)
 
+    source_path = normalized_config.get("source_path")
     prepare_runtime_config(normalized_config, canaries)
     build_image()
-    run_container()
+    run_container(source_path)

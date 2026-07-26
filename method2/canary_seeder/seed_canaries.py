@@ -62,6 +62,9 @@ def build_canaries(normalized_config: dict, run_id: str) -> dict:
             "value": value,
             "run_id": run_id,
             "tag": embedded_tag,
+            "source_file": cred.get("source_file", ".env"),
+            "storage": cred.get("storage", "plaintext_env"),
+            "pattern_name": cred.get("pattern_name"),
         }
     return canaries
 
