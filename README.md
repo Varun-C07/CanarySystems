@@ -3,7 +3,7 @@
 **Zero-trust security auditor and dynamic penetration testing framework for autonomous AI agents.**
 
 Answers the fundamental security question:  
-> **"If an AI agent gets compromised by prompt injection or tool poisoning, what credentials can an attacker reach — and can they actually exfiltrate them over the network?"**
+> **"If an AI agent gets compromised by prompt injection or tool poisoning, what credentials can an attacker reach, and can they actually exfiltrate them over the network?"**
 
 Most security tools stop at flagging static risks. **CanarySystems proves exploitability in an isolated sandbox.**
 
@@ -82,7 +82,7 @@ Before running CanarySystems, ensure you have:
 1. **Python 3.10+**: With `venv` support.
 2. **Docker Desktop**: Installed and **running** (required for Method 2 containerized attack simulation).
 3. **Groq API Key** (`GROQ_API_KEY`): Optional but recommended for generating AI remediation reports (`run_pipeline.py advise`).
-4. **Target Agent Workspace Path**: The local directory containing your agent configuration (e.g. `C:\Users\Sheil\.openclaw` or your agent repository).
+4. **Target Agent Workspace Path**: The local directory containing your agent configuration (e.g. `C:\Users\<UserName>\.openclaw` or your agent repository).
 
 ---
 
@@ -92,8 +92,8 @@ Before running CanarySystems, ensure you have:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YourOrg/YC-agentsecurity.git
-cd YC-agentsecurity
+git clone https://github.com/Varun-C07/CanarySystems.git
+cd CanarySystems
 
 # Create and activate Python virtual environment
 python3 -m venv venv
@@ -102,7 +102,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # On Windows (PowerShell):
-.\venv\Scripts\Activate.ps1
+.\venv\Scripts\activate.ps1
 
 # Install required dependencies
 pip install -r requirements.txt
