@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from method1.graph_builder.render_graph import TYPE_COLORS, _annotate_nodes, _safe_json_for_script
 from method2.attack_payloads.payloads import ALL_PAYLOAD_TYPES
 
-PRODUCT_NAME = "AgentGuard"
+PRODUCT_NAME = "CanarySystems"
 TAGLINE = "Prove it, don't guess it"
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
