@@ -95,13 +95,17 @@ def run_container(source_path: str = None):
     inb_posix = CHAT_INBOX_MOUNT_DIR.resolve().as_posix()
     out_posix = OUTPUT_MOUNT_DIR.resolve().as_posix()
 
+    entry_posix = (REPLICA_DIR / "sandbox_agent" / "entrypoint.py").resolve().as_posix()
+
     cmd = [
         "docker", "run", "-d",
         "--name", CONTAINER_NAME,
+        "-p", "18789:18789",
         "-v", f"{cfg_posix}:/agent/config",
         "-v", f"{wat_posix}:/agent/watched",
         "-v", f"{inb_posix}:/agent/chat_inbox",
         "-v", f"{out_posix}:/agent/output",
+        "-v", f"{entry_posix}:/agent/entrypoint.py:ro",
     ]
 
     # Mount real agent codebase into /agent/source READ-ONLY (:ro) for host safety

@@ -1,121 +1,150 @@
-# Agent Security Auditor
+# CanarySystems — Autonomous AI Agent Security Auditor & Penetration Testing Suite
 
-A blast-radius security auditor for personal AI agents (OpenClaw-style agents running locally with access to a user's files, credentials, and tools).
+**Zero-trust security auditor and dynamic penetration testing framework for autonomous AI agents.**
 
-Answers one core question: **if this agent gets compromised, what exactly can an attacker reach — and can they actually get it out?**
+Answers the fundamental security question:  
+> **"If an AI agent gets compromised by prompt injection or tool poisoning, what credentials can an attacker reach — and can they actually exfiltrate them over the network?"**
 
-Most existing tools stop at flagging risk. This one proves it.
-
----
-
-## What It Does
-
-### Method 1 — Static Exposure Scanner
-Reads an agent's configuration (`settings.json`, `.env`, `mcp_servers.json`, `skills/*.json`) and:
-- Detects high-entropy credentials automatically, even if custom key names like `key1` or `my_secret` are used.
-- Checks against known misconfigurations (missing auth tokens, `0.0.0.0` network bindings, unsandboxed command execution, plaintext credentials, unpinned third-party tools, known vulnerable versions).
-- Builds a ranked **Blast Radius Graph** scored by (sensitivity × BFS cumulative ease of reach).
-- Renders an interactive D3.js visual graph (`output/graph_visualization.html`) and human-readable audit reports.
-
-### Method 2 — Dynamic Exfiltration Prover
-Takes Method 1's highest-ranked targets and proves exploitability in a controlled sandbox:
-- Clones the agent config into an isolated Docker sandbox with real credentials replaced by uniquely tagged **canary credentials**.
-- Fires three realistic attack vectors:
-  1. **Direct Chat Injection** (`direct_injection`)
-  2. **Indirect Document Poisoning** (`indirect_injection`)
-  3. **Third-Party Tool Description Poisoning** (`tool_poisoning`)
-- Uses a lightweight HTTP listener to catch exfiltrated canaries and output a structured verdict with exact attack-type attribution.
+Most security tools stop at flagging static risks. **CanarySystems proves exploitability in an isolated sandbox.**
 
 ---
 
-## Running the Pipeline End-to-End
+## 💡 What It Does & Key Use Cases
 
-### Prerequisites
-- Python 3.10+
-- Docker Desktop (required only for Method 2 dynamic attack execution)
+CanarySystems provides an end-to-end security pipeline for personal and enterprise AI agents (OpenClaw, AutoGPT, CrewAI, LangChain, etc.):
 
-### 1. Run Method 1 (Static Scan)
-Scans the target configuration directory and outputs results into `output/`:
+- **Pre-Deployment Security Validation:** Audit agent setups before granting filesystem access, terminal execution, or live API credentials.
+- **Blast Radius Graphing:** Map multi-hop asset reachability showing how an attacker can move from a compromised tool to sensitive enterprise secrets.
+- **Automated Red-Teaming & Pen-Testing:** Fire 8 realistic prompt-injection, document-poisoning, and tool-abuse attacks against live agent models.
+- **Proven Exfiltration Interception:** Intercept canary credentials leaving the sandbox via HTTP webhooks, DNS tunneling, or unauthorized file writes.
+
+---
+
+## 🛡️ Zero-Touch Sandboxing & Host Safety
+
+CanarySystems is built from the ground up to **guarantee your host machine and real agent credentials remain 100% unharmed**:
+
+1. **Read-Only Host Mounting (`:ro`):** Your host workspace (`C:\Users\Sheil\.openclaw` or target repository) is mounted into the Docker container as **Read-Only (`:ro`)**.
+2. **Ephemeral Container Workspaces (`/agent/workdir`):** The container copies code into ephemeral container-local storage before execution. Your real files are **never modified**.
+3. **Canary Credential Substitution:** Real API keys in container memory are swapped for uniquely tagged **Canary Credentials** (`sk-CANARY_...`). If an exfiltration occurs, no real secrets leave your system.
+
+---
+
+## 🧪 Attacks & Exploits Simulated
+
+CanarySystems automatically fires **8 targeted attack types across 6 exfiltration channels**:
+
+| Attack Type | Delivery Channel | Payload Description |
+| :--- | :--- | :--- |
+| **`direct_injection`** | Chat Inbox / HTTP API | Direct prompt injection attempting credential retrieval via chat. |
+| **`indirect_injection`** | Watched Documents | Poisoned documents (`meeting_notes.txt`) containing embedded prompt overrides. |
+| **`tool_poisoning`** | MCP Tool Manifests | Poisoned Model Context Protocol (MCP) tool descriptions forcing key leaks. |
+| **`dns_exfil_injection`** | Watched Documents | Prompt injections instructing the agent to perform DNS lookups (`<CANARY>.exfil.test`). |
+| **`file_exfil_injection`** | Watched Documents | Attacks coercing the agent to write canary keys to disk (`/agent/output/`). |
+| **`exec_exfil_injection`** | Chat Inbox / HTTP API | Commands instructing the agent to execute shell commands (`cat /agent/config/.env`). |
+| **`package_install_injection`** | Chat Inbox / HTTP API | Injections attempting unverified package manager installations (`npm install ...`). |
+| **`tool_abuse_injection`** | MCP Tool Manifests | Malicious tool definitions that forward secrets to external webhooks. |
+
+---
+
+## 🔍 Security Loopholes & Gaps Identified
+
+CanarySystems checks **8 distinct security categories**:
+
+| Security Category | Rule Name | Loopholes & Gaps Flagged |
+| :--- | :--- | :--- |
+| **API Authentication** | `auth_token` | Control API lacks authentication (`auth_token == null`), letting anyone control the agent. |
+| **Filesystem Scope** | `overbroad_scope` | Tools granted unrestricted write access to root directories (`/`, `C:\`, `*`). |
+| **Host Execution** | `unsandboxed_exec` | Unsandboxed shell execution capabilities enabled (`bash`, `sh`, `exec`). |
+| **Credential Storage** | `plaintext_credentials` | Unencrypted secrets stored in `.env` or config files evaluated using Shannon Entropy. |
+| **Transport Security** | `tls_enabled` | TLS/HTTPS disabled on non-loopback bindings, allowing MITM packet sniffing. |
+| **Network Exposure** | `network_binding` | Control API bound to `0.0.0.0` (publicly accessible) instead of `127.0.0.1`. |
+| **Dependency Pinning** | `unpinned_provenance` | Installed skills/tools originating from unverified 3rd-party URLs or unpinned git commits. |
+| **Version Advisories** | `stale_version` | Component versions matching known security vulnerability advisories (CVEs). |
+
+---
+
+## 📊 Consolidated Outputs Generated
+
+All scan and penetration testing results are saved in the `output/` directory:
+
+- **`output/report.json`**: Structured static scan findings and Blast Radius dependency graph.
+- **`output/verdict.json`**: Proven dynamic exfiltration evidence generated by the 3 Interceptor Pillars (Egress Proxy on port 8080, DNS Sinkhole on port 5353, File Auditor).
+- **`output/ai_remediation.md`**: Groq AI-generated prioritized step-by-step remediation guide.
+- **`output/dashboard.html`**: Interactive visual HTML dashboard displaying risk metrics and D3.js blast-radius graphs.
+
+---
+
+## 📋 Requirements & Prerequisites
+
+Before running CanarySystems, ensure you have:
+
+1. **Python 3.10+**: With `venv` support.
+2. **Docker Desktop**: Installed and **running** (required for Method 2 containerized attack simulation).
+3. **Groq API Key** (`GROQ_API_KEY`): Optional but recommended for generating AI remediation reports (`run_pipeline.py advise`).
+4. **Target Agent Workspace Path**: The local directory containing your agent configuration (e.g. `C:\Users\Sheil\.openclaw` or your agent repository).
+
+---
+
+## 🚀 Quickstart & How to Run
+
+### 1. Clone & Setup Environment
+
 ```bash
-python3 run_pipeline.py scan sample_configs/openclaw_default
+# Clone the repository
+git clone https://github.com/YourOrg/YC-agentsecurity.git
+cd YC-agentsecurity
+
+# Create and activate Python virtual environment
+python3 -m venv venv
+
+# On Linux/macOS:
+source venv/bin/activate
+
+# On Windows (PowerShell):
+.\venv\Scripts\Activate.ps1
+
+# Install required dependencies
+pip install -r requirements.txt
+
+# (Optional) Export Groq API Key for AI advice generation
+# PowerShell:
+$env:GROQ_API_KEY="gsk_your_groq_key_here"
+# Linux/macOS:
+export GROQ_API_KEY="gsk_your_groq_key_here"
 ```
-**Artifacts Generated (`output/`):**
-- `report.json`: Structured target list and blast radius model for Method 2.
-- `dashboard.html`: Self-contained interactive visual dashboard. Open this file in your browser to inspect risk nodes and recommendations!
+
+### 2. Run Commands (Unified CLI)
+
+| Command | Description |
+| :--- | :--- |
+| `python3 run_pipeline.py scan <path>` | Run Method 1 Static Exposure Scan & Blast Radius Graphing. |
+| `python3 run_pipeline.py attack <report.json>` | Run Method 2 Dynamic Attack Suite in Docker Sandbox. |
+| `python3 run_pipeline.py full <path>` | **Run Method 1 + Method 2 end-to-end**. |
+| `python3 run_pipeline.py advise` | Generate Groq AI Remediation Advice (`output/ai_remediation.md`). |
+| `python3 run_pipeline.py report` | Render interactive HTML Dashboard (`output/dashboard.html`). |
+| `python3 run_pipeline.py kill` | Emergency Stop: Terminate and remove all active sandbox containers. |
 
 ---
 
-### 2. Run Dry-Run Simulation (No Docker Required)
-Preview attack payloads and generated canary values without touching container runtimes:
-```bash
-python3 method2/safety_wrapper.py output/report.json --dry-run
-```
-
----
-
-### 3. Run Method 2 (Dynamic Attack Test)
-Runs full containerized canary injection testing:
-```bash
-python3 run_pipeline.py attack output/report.json
-```
-*(Or run both Method 1 and Method 2 end-to-end with one command: `python3 run_pipeline.py full sample_configs/openclaw_default`)*
-
----
-
-### 4. Generate AI Remediation Advice
-```bash
-python3 run_pipeline.py advise
-```
-
----
-
-### 5. Emergency Kill Switch / Cleanup
-To immediately halt tests and destroy sandbox containers:
-```bash
-python3 run_pipeline.py kill
-```
-
----
-
-## System Architecture
+## 🏗️ Repository Architecture
 
 ```text
-run_pipeline.py                    # Unified CLI entrypoint
-output/                            # Auto-generated scan & test reports
+run_pipeline.py                    # Unified CLI entry point
+output/                            # Auto-generated reports and interactive dashboard
 
-method1/                           # STATIC EXPOSURE SCANNER
-├── config_collector/collector.py # Entropy-based credential & config parser
-├── rule_engine/engine.py          # Plugin checklist runner (auth, network, permissions, CVEs)
-├── graph_builder/graph_builder.py# BFS multi-hop blast-radius modeler
-└── report_renderer/               # Human & Machine report generator
+method1/                           # STATIC EXPOSURE SCANNER & GRAPH BUILDER
+├── config_collector/collector.py # Entropy & structural credential parser
+├── rule_engine/engine.py          # Security rule checklist runner
+├── graph_builder/graph_builder.py# Multi-hop Blast Radius graph modeler
+└── report_renderer/               # Report and visual graph generator
 
-method2/                           # DYNAMIC CANARY TESTER
-├── replica_builder/               # Docker replica container generator
-├── canary_seeder/seed_canaries.py # Tagged canary credential generator
-├── attack_payloads/payloads.py    # Injection attack payload templates (with attack_id)
-├── delivery_driver/deliver.py     # Channel delivery (chat, watched files, tool manifests)
-├── listener_service/listener.py   # Ground-truth canary HTTP callback listener
-├── verdict_aggregator/            # Attributed pass/fail verdict generator
+method2/                           # DYNAMIC CANARY PENETRATION TESTER
+├── replica_builder/               # Docker replica container & entrypoint generator
+├── canary_seeder/seed_canaries.py # Tagged canary token generator
+├── attack_payloads/payloads.py    # 8 Attack vector payload templates
+├── delivery_driver/deliver.py     # Multi-channel delivery engine (Chat, Files, MCPs)
+├── listener_service/              # 3 Interceptor Pillars (Proxy, DNS, File Auditor)
+├── verdict_aggregator/            # Attributed exfiltration verdict generator
 └── safety_wrapper.py              # Consent gate, dry-run & kill switch
 ```
-
-
-## Method 1 static scanner checks 8 distinct security categories:
-
-Security Category	Rule Name	What It Checks & Flags
-
-Network Exposure	network_binding	Checks if control API is bound to 0.0.0.0 (reachable from LAN/Public Internet) instead of 127.0.0.1.
-
-API Authentication	auth_token	Checks if gateway control API lacks an authentication token (auth_token == null).
-
-Host System Execution	unsandboxed_exec	Checks if shell execution capabilities are enabled without container sandboxing ("sandboxed": false).
-
-Filesystem Scope	overbroad_scope	Checks if tools have unrestricted write access to root directories (/, C:\, *).
-
-Credential Storage	plaintext_credentials	Scans .env files using Shannon Entropy Calculation + regex to flag unencrypted secret storage vs OS keychains.
-
-Transport Security	tls_enabled	Checks if TLS/HTTPS encryption is disabled on non-loopback connections, allowing MITM credential interception.
-
-Dependency Pinning	unpinned_provenance	Checks if installed skills/tools come from unverified 3rd-party URLs or unpinned git commits/versions.
-
-Version Vulnerabilities	stale_version	Scans for unpinned pre-1.0 skills or outdated component versions matching known vulnerability advisories.

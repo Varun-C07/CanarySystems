@@ -220,7 +220,6 @@ def run_kill():
     subprocess.run(
         ["docker", "rm", "-f", "agent-sandbox-instance"],
         capture_output=True,
-        creationflags=_SUBPROCESS_FLAGS,
     )
     print("[kill] sandbox container stopped and removed.")
 

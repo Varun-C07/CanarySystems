@@ -54,29 +54,41 @@ STRUCTURAL_SECRET_PATTERNS = [
 SKIP_DIRS = {
     ".git", "node_modules", "venv", ".venv", "__pycache__",
     ".mypy_cache", ".pytest_cache", ".tox", "dist", "build",
-    ".eggs", ".idea", ".vscode",
+    ".eggs", ".idea", ".vscode", ".pnpm-store", ".next", "out",
+    ".turbo", "coverage", ".cache", ".npm", "vendor", "tmp", "temp",
+    "docs", "documentation", "test", "tests", "__tests__", "qa",
+    "examples", "fixtures", "patches", "git-hooks",
+    "ui", "assets", "public", "static", "components", "pages",
 }
 
 # Files to always skip
 SKIP_FILES = {
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
     "Pipfile.lock", "poetry.lock", "composer.lock",
+    "bundle.js", "bundle.min.js", "vendor.js",
+    "CHANGELOG.md", "README.md", "SECURITY.md", "AGENTS.md",
 }
 
-# File extensions to treat as text and scan
-TEXT_EXTENSIONS = {
-    # env files are handled specially by prefix check
+# Config file extensions (always scanned)
+CONFIG_EXTENSIONS = {
     ".json", ".yaml", ".yml", ".toml",
+    ".cfg", ".ini", ".conf", ".properties", ".env",
+}
+
+# Code file extensions (scanned if path/name matches candidate config keywords)
+CODE_EXTENSIONS = {
     ".py", ".js", ".ts", ".jsx", ".tsx",
-    ".cfg", ".ini", ".conf", ".properties",
-    ".txt", ".md", ".rst",
-    ".xml", ".csv",
     ".sh", ".bash", ".zsh",
     ".rb", ".go", ".java", ".rs", ".php",
-    ".env",  # explicit, but also handled by prefix
 }
 
-# Binary extensions to never read
+# Keywords in filename/path that warrant scanning a code file
+CANDIDATE_PATH_KEYWORDS = {
+    "config", "setting", "env", "secret", "credential",
+    "key", "auth", "server", "mcp", "skill", "api", "token",
+    "gateway", "client", "db", "database", "pass", "pwd",
+}
+
 BINARY_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg", ".webp",
     ".mp3", ".mp4", ".avi", ".mov", ".wav",
@@ -105,27 +117,59 @@ def mask_value(value: str) -> str:
 
 def _is_text_file(filepath: Path) -> bool:
     """Determine if a file should be scanned as text."""
+    try:
+        if filepath.stat().st_size > 250_000:
+            return False
+    except OSError:
+        return False
+
     name = filepath.name.lower()
     # Any file starting with .env (handles .env, .env.local, .env.prod, etc.)
     if name.startswith(".env"):
         return True
+
     suffix = filepath.suffix.lower()
     if suffix in BINARY_EXTENSIONS:
         return False
-    if suffix in TEXT_EXTENSIONS:
+
+    # Always scan explicit configuration format files
+    if suffix in CONFIG_EXTENSIONS:
         return True
-    # No extension — could be a dotfile like .bashrc, .profile, etc.
+
+    # For code files, scan if file name/path contains candidate security/config keywords or is in root
+    if suffix in CODE_EXTENSIONS:
+        path_str = filepath.as_posix().lower()
+        if any(kw in path_str for kw in CANDIDATE_PATH_KEYWORDS):
+            return True
+        if len(filepath.parts) <= 2:  # Root level code file
+            return True
+        return False
+
+    # No extension — dotfiles like .bashrc, .profile, etc.
     if not suffix and name.startswith("."):
         return True
+
     return False
 
 
+TEST_FILE_SUFFIXES = (
+    ".test.ts", ".spec.ts", ".test.js", ".spec.js",
+    ".test.py", ".spec.py", ".test.jsx", ".spec.jsx", ".test.tsx", ".spec.tsx"
+)
+
+
 def _should_skip_dir(dirname: str) -> bool:
-    return dirname.lower() in SKIP_DIRS or dirname.startswith(".")
+    d_lower = dirname.lower()
+    return d_lower in SKIP_DIRS or d_lower.startswith(".") or "test-" in d_lower or "-test" in d_lower or "test" in d_lower
 
 
 def _should_skip_file(filename: str) -> bool:
-    return filename.lower() in SKIP_FILES
+    name_lower = filename.lower()
+    if name_lower in SKIP_FILES:
+        return True
+    if any(name_lower.endswith(suf) for suf in TEST_FILE_SUFFIXES):
+        return True
+    return False
 
 
 # ── Extraction strategies per file type ─────────────────────────────────
@@ -148,7 +192,7 @@ def _extract_env_pairs(content: str) -> list:
 
 
 def _extract_json_pairs(content: str) -> list:
-    """Recursively extract all string key-value pairs from a JSON document."""
+    """Recursively extract key-value pairs from JSON, filtering to candidate credentials."""
     pairs = []
     try:
         data = json.loads(content)
@@ -160,7 +204,8 @@ def _extract_json_pairs(content: str) -> list:
             for k, v in obj.items():
                 path = f"{prefix}.{k}" if prefix else k
                 if isinstance(v, str):
-                    pairs.append((path, v))
+                    if CREDENTIAL_KEY_PATTERN.search(k) or any(regex.search(v) for _, regex in STRUCTURAL_SECRET_PATTERNS):
+                        pairs.append((path, v))
                 else:
                     _walk(v, path)
         elif isinstance(obj, list):
@@ -172,41 +217,38 @@ def _extract_json_pairs(content: str) -> list:
 
 
 def _extract_yaml_pairs(content: str) -> list:
-    """Extract key=value pairs from YAML using simple line-by-line regex.
-    Avoids a PyYAML dependency — good enough for credential detection."""
+    """Extract key=value pairs from YAML using simple line-by-line regex."""
     pairs = []
     for line in content.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        # Match simple YAML scalar: key: value
         m = re.match(r'^([A-Za-z_][A-Za-z0-9_.\-]*)\s*:\s*(.+)$', line)
         if m:
             key, value = m.group(1).strip(), m.group(2).strip()
-            # Strip surrounding quotes
             if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
                 value = value[1:-1]
             if value:
-                pairs.append((key, value))
+                if CREDENTIAL_KEY_PATTERN.search(key) or any(regex.search(value) for _, regex in STRUCTURAL_SECRET_PATTERNS):
+                    pairs.append((key, value))
     return pairs
 
 
 def _extract_code_string_literals(content: str) -> list:
     """Extract string assignments from code files (Python, JS, TS).
-    Matches patterns like: key = "value", const key = "value", etc."""
+    Filters to candidate credential keys or values matching structural secret patterns."""
     pairs = []
-    # Python/JS/TS assignment patterns
     patterns = [
-        # Python: VAR = "value" or VAR = 'value'
         re.compile(r'''^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']([^"']{8,})["']''', re.MULTILINE),
-        # JS/TS: const/let/var VAR = "value"
         re.compile(r'''^\s*(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']([^"']{8,})["']''', re.MULTILINE),
-        # export const VAR = "value"
         re.compile(r'''^\s*export\s+(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']([^"']{8,})["']''', re.MULTILINE),
     ]
     for pattern in patterns:
         for m in pattern.finditer(content):
-            pairs.append((m.group(1), m.group(2)))
+            key, val = m.group(1), m.group(2)
+            # Fast filter: only keep if key name matches credential pattern or value matches structural secret
+            if CREDENTIAL_KEY_PATTERN.search(key) or any(regex.search(val) for _, regex in STRUCTURAL_SECRET_PATTERNS):
+                pairs.append((key, val))
     return pairs
 
 
@@ -228,15 +270,14 @@ def _classify_file(filepath: Path) -> str:
     return "env"  # fallback: try KEY=VALUE parsing
 
 
-def _check_value(key: str, value: str) -> dict | None:
+def _check_value(key: str, value: str, storage: str = "plaintext_env") -> dict | None:
     """Check a key-value pair against all detection layers.
     Returns a credential dict if detected, else None."""
 
     # ── False-positive filters (applied before any detection) ──
-    # Skip values that are clearly not secrets
+    value_lower = value.lower()
 
     # URLs, file paths, package refs — high entropy but not secrets
-    value_lower = value.lower()
     if value_lower.startswith(("http://", "https://", "ftp://", "npm://", "file://", "ssh://", "git://")):
         # Exception: database connection strings with embedded passwords ARE secrets
         if not any(value_lower.startswith(p) for p in ("postgres://", "mysql://", "mongodb://", "redis://")):
@@ -251,18 +292,17 @@ def _check_value(key: str, value: str) -> dict | None:
     if word_count >= 4:
         return None
 
-    # Skip known non-credential JSON key suffixes
+    # Skip known non-credential JSON/Code key suffixes & common identifier constants
     key_lower = key.lower()
     key_leaf = key_lower.rsplit(".", 1)[-1] if "." in key_lower else key_lower
     NON_CRED_KEYS = {
         "name", "description", "url", "source", "author", "version",
         "label", "title", "type", "format", "host", "port",
-        "path", "scopes", "sandboxed", "pinned",
+        "path", "scopes", "sandboxed", "pinned", "header", "prefix",
+        "filename", "suffix", "flag", "code", "schema", "attribute",
     }
-    # Strip array index suffixes like "servers[0].source" -> "source"
     clean_leaf = re.sub(r'\[\d+\]\.?', '', key_leaf).strip(".")
-    if clean_leaf in NON_CRED_KEYS:
-        # Only allow through if the value matches a structural secret pattern
+    if clean_leaf in NON_CRED_KEYS or any(key_lower.endswith(s) for s in ("_filename", "_header", "_prefix", "_path", "_flag", "_schema", "_attribute", "_kind", "_type")):
         has_structural_match = any(regex.search(value) for _, regex in STRUCTURAL_SECRET_PATTERNS)
         if not has_structural_match:
             return None
@@ -270,7 +310,7 @@ def _check_value(key: str, value: str) -> dict | None:
     # ── Layer 2: Key name pattern ──
     is_named_cred = bool(CREDENTIAL_KEY_PATTERN.search(key))
 
-    # ── Layer 3a: Structural secret signatures (check value only) ──
+    # ── Layer 3a: Structural secret signatures ──
     matched_pattern = None
     for pattern_name, regex in STRUCTURAL_SECRET_PATTERNS:
         if regex.search(value):
@@ -281,20 +321,35 @@ def _check_value(key: str, value: str) -> dict | None:
     entropy = calculate_entropy(value)
     is_high_entropy = len(value) >= 12 and entropy >= 3.5
 
-    # For entropy-only detections from config/code files, require BOTH
-    # high entropy AND a credential-like key name to reduce false positives.
-    # Structural signatures and named-key matches are always trusted.
-    if matched_pattern or is_named_cred:
-        if matched_pattern:
-            reason = "structural_signature"
-        else:
+    # ── Precision Classification ──
+    # 1. Structural secret signatures are ALWAYS secrets across all storage types.
+    if matched_pattern:
+        reason = "structural_signature"
+
+    # 2. Plaintext .env files: trusted for name_pattern or high_entropy.
+    elif storage == "plaintext_env":
+        if is_named_cred:
             reason = "name_pattern"
+        elif is_high_entropy:
+            reason = "high_entropy"
+        else:
+            return None
+
+    # 3. Hardcoded in code: require structural match OR a true secret token
+    # Filter out code constants where value contains namespace separators (:, ., -) or matches key
+    elif storage == "hardcoded_in_code":
+        if is_high_entropy and is_named_cred:
+            val_clean = value.strip('"\'')
+            # Filter out code constants, env var names (containing _ or - or : or .), alphabet sets, or matching keys
+            if "_" in val_clean or "-" in val_clean or ":" in val_clean or "." in val_clean or val_clean.upper() in key.upper() or key.upper() in val_clean.upper() or "abcdef" in val_clean.lower() or "012345" in val_clean:
+                return None
+            reason = "high_entropy"
+        else:
+            return None
+
+    # 4. Config files (.json, .yaml): require high_entropy and is_named_cred
     elif is_high_entropy and is_named_cred:
         reason = "high_entropy"
-    elif is_high_entropy:
-        # Entropy alone is only trusted for .env files (handled by caller).
-        # For other file types, require a key-name match too.
-        return None
     else:
         return None
 
@@ -360,7 +415,7 @@ def deep_scan_credentials(config_dir: Path) -> list:
                 if dedup_key in seen_keys:
                     continue
 
-                result = _check_value(key, value)
+                result = _check_value(key, value, storage)
                 if result:
                     seen_keys.add(dedup_key)
                     credentials.append({

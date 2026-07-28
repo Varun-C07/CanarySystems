@@ -34,13 +34,43 @@ CONFIG_DIR = REPLICA_DIR / "runtime_config"
 OUTPUT_DIR = REPLICA_DIR / "runtime_output"
 
 
+import urllib.request
+import urllib.error
+
+
+def _try_http_gateway_delivery(prompt_text: str):
+    """Attempt HTTP POST delivery to real running agent gateway endpoints."""
+    endpoints = [
+        "http://127.0.0.1:18789/api/chat",
+        "http://127.0.0.1:18789/v1/chat/completions",
+        "http://127.0.0.1:8080/chat",
+        "http://127.0.0.1:3000/api/chat",
+    ]
+    payload_data = json.dumps({"prompt": prompt_text, "message": prompt_text, "text": prompt_text}).encode("utf-8")
+
+    for url in endpoints:
+        try:
+            req = urllib.request.Request(
+                url,
+                data=payload_data,
+                headers={"Content-Type": "application/json", "User-Agent": "security-tester/1.0"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                print(f"[delivery_driver] HTTP gateway delivery SUCCESS to {url} (status {resp.status})")
+                return
+        except Exception:
+            pass
+
+
 def deliver_to_chat_inbox(payload: dict):
-    """Deliver payload as a direct chat message file."""
+    """Deliver payload as a direct chat message file and attempt HTTP Gateway POST."""
     CHAT_INBOX_DIR.mkdir(exist_ok=True)
     filepath = CHAT_INBOX_DIR / payload["filename"]
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(payload["content"])
     print(f"[delivery_driver] delivered {payload['type']} to chat_inbox: {filepath}")
+    _try_http_gateway_delivery(payload["content"])
 
 
 def deliver_to_watched_file(payload: dict):

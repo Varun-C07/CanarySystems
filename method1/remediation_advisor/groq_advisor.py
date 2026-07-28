@@ -96,25 +96,24 @@ def _summarize_failed_rules(failed_rules: list) -> str:
 
 
 def _summarize_attack_targets(top_attack_targets: list) -> str:
-    """Render machine_report.json's top_attack_targets (the blast-radius
-    ranking) as a bulleted list for the prompt."""
+    """Render machine_report.json's top_attack_targets as a bulleted list for the prompt."""
     if not top_attack_targets:
         return "None identified."
     lines = []
-    for t in top_attack_targets:
+    for t in top_attack_targets[:20]:
         lines.append(
             f"- {t.get('label')} (type={t.get('type')}, "
             f"sensitivity={t.get('sensitivity')}, "
             f"ease_of_reach={t.get('ease_of_reach')}, "
             f"blast_radius_score={t.get('blast_radius_score')})"
         )
+    if len(top_attack_targets) > 20:
+        lines.append(f"... and {len(top_attack_targets) - 20} additional target(s).")
     return "\n".join(lines)
 
 
 def _summarize_verdict(verdict: dict) -> str:
-    """Render verdict.json's proven-exploitation results for the prompt:
-    which credentials leaked, via which channel/attack type, which stayed
-    safe, and a per-channel hit summary."""
+    """Render verdict.json's proven-exploitation results for the prompt."""
     summary = verdict.get("summary", {})
     results = verdict.get("results", [])
 
@@ -127,7 +126,7 @@ def _summarize_verdict(verdict: dict) -> str:
     leaked = [r for r in results if r.get("fired")]
     if leaked:
         lines.append("\nCredentials that LEAKED:")
-        for r in leaked:
+        for r in leaked[:20]:
             ev = r.get("evidence") or {}
             lines.append(
                 f"- {r.get('credential')}: leaked via {ev.get('leak_channel', 'unknown')} "
@@ -138,12 +137,11 @@ def _summarize_verdict(verdict: dict) -> str:
 
     safe = [r for r in results if not r.get("fired")]
     if safe:
+        safe_names = [r.get("credential", "unknown") for r in safe[:20]]
+        extra = f" (and {len(safe) - 20} others)" if len(safe) > 20 else ""
         lines.append(
             "\nCredentials NOT observed to leak in this test run: "
-            + ", ".join(r.get("credential", "unknown") for r in safe)
-            + " (this does not prove they are safe -- only that this specific "
-              "test run didn't catch a leak; some attack channels may be "
-              "environment-limited in this test setup)."
+            + ", ".join(safe_names) + extra
         )
 
     channel_summary = summary.get("exfiltration_channel_summary", {})

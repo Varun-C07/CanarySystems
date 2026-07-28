@@ -83,12 +83,30 @@ def detect_target_command(workdir: Path) -> list | None:
     if not workdir.exists() or workdir == SOURCE_DIR or not any(workdir.iterdir()):
         return None
 
-    # Check for Node.js agent (e.g. OpenClaw)
+    # Check for OpenClaw / JS entrypoints
+    if (workdir / "openclaw.mjs").exists():
+        return ["node", str(workdir / "openclaw.mjs"), "gateway"]
+
+    for js_entry in ["index.mjs", "index.js", "server.js", "app.js"]:
+        if (workdir / js_entry).exists():
+            return ["node", str(workdir / js_entry)]
+
+    # Check for Node.js package.json scripts or bin
     package_json = workdir / "package.json"
     if package_json.exists():
         try:
             with open(package_json, "r", encoding="utf-8") as f:
                 pkg = json.load(f)
+
+            # Check bin field (e.g. {"openclaw": "openclaw.mjs"})
+            bin_field = pkg.get("bin")
+            if isinstance(bin_field, dict):
+                for b_name, b_path in bin_field.items():
+                    if (workdir / b_path).exists():
+                        return ["node", str(workdir / b_path)]
+            elif isinstance(bin_field, str) and (workdir / bin_field).exists():
+                return ["node", str(workdir / bin_field)]
+
             main_file = pkg.get("main", "index.js")
             if (workdir / main_file).exists():
                 return ["node", str(workdir / main_file)]
